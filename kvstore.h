@@ -1,13 +1,29 @@
 #pragma once
 
 #include "kvstore_api.h"
-#include"memtable.h"
+#include "memtable.hpp"
+#include "sstable.hpp"
 
-class KVStore : public KVStoreAPI
-{
-	// You can add your implementation here
+//SSTable 的大小不6kB
+#define SSTABLESIZE (1 << 14)
+using key_type = uint64_t;
+using value_type = std::string;
+
+class KVStore : public KVStoreAPI {
+    // You can add your implementation here
 private:
-    MemTable *memtable;
+    uint64_t stamp;//时间戳
+    uint64_t head;//头部
+    uint64_t tail;//尾部
+    uint64_t bloomSize;//布隆过滤器大小
+    int test_mode;
+    MemTable<key_type, value_type> *memTable;
+    std::vector<std::vector<SSTable<key_type, value_type>*>> layers;
+    std::string dir_path;
+    std::string vlog_path;
+
+    void compaction(int level);
+
 public:
 	KVStore(const std::string &dir, const std::string &vlog);
 

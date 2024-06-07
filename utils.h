@@ -9,8 +9,12 @@
 #include <fcntl.h>
 #include <cstring>
 #include <memory>
+#include <chrono>
+#include <vector>
+#include <cassert>
 
 #define PAGE_SIZE (4 * 1024)
+#define VLOGPADDING 15
 
 namespace utils
 {
@@ -199,4 +203,159 @@ namespace utils
         }
         return crc;
     }
+
+    /**
+     * read data from specific offset and length in a file
+     * @param path file to be write for.
+     * @param offset offset from the beginning of the file you want to start reading at.
+     * @param len number of bytes you want to read.
+     * @return -1 if fail to open, size if read successfully.
+     */
+    static inline size_t read_file(const std::string &path, off_t offset, size_t len, void * buf)
+    {
+        int fd = open(path.c_str(), O_RDWR, 0644);
+        if (fd < 0)
+        {
+            perror("open");
+            return -1;
+        }
+        lseek(fd, offset, SEEK_SET);
+        size_t count = read(fd, buf, len);
+        if(count != len)
+        {
+            perror("read");
+            return - 1;
+        }
+        close(fd);
+        return count;
+    }
+
+    /**
+     * Check whether file exists
+     * @param path file to be checked.
+     * @return true if file exists, false otherwise.
+     */
+    static inline bool fileExists(const std::string &path)
+    {
+        struct stat st;
+        int ret = stat(path.c_str(), &st);
+        return ret == 0 && st.st_mode & S_IFREG;
+    }
+
+    /**
+    * write specific length of data into specific offset in a file
+    * @param path file to be write for.
+    * @return -1 if fail to open, size if write successfully.
+    */
+    static inline size_t write_file(const std::string &path, off_t offset, size_t len, void * buf)
+    {
+        int fd = open(path.c_str(), O_RDWR | O_CREAT | O_APPEND, 0644);
+        if (fd < 0)
+        {
+            perror("open");
+            return -1;
+        }
+        if(~offset) lseek(fd, offset, SEEK_SET);
+        size_t count = write(fd, buf, len);
+        if(count != len)
+        {
+            perror("write");
+            return - 1;
+        }
+        close(fd);
+        return count;
+    }
+
+    /**
+     * generate checksum
+     * @param key key used to generate checksum.
+     * @param vlen length of value.
+     * @param value value used to generate checksum.
+     * @return generated checksum.
+     */
+    static inline uint16_t generate_checksum(uint64_t key, uint32_t vlen, std::string value)
+    {
+        std::vector<unsigned char> src_v;
+        char *ch = (char *)&key;
+        for(int i = 0; i < 8; i ++, ch ++) {
+            src_v.push_back(*ch);
+        }
+        ch = (char *)&vlen;
+        for(int i = 0; i < 4; i ++, ch ++) {
+            src_v.push_back(*ch);
+        }
+        assert(vlen == value.length());
+        for(int i = 0; i < vlen; i ++) {
+            src_v.push_back(value[i]);
+        }
+        return crc16(src_v);
+    }
+
+    /**
+     * get offset of end pointer of vlog file
+     * @param path file to be write for.
+     * @return -1 if fail to open, size if write successfully.
+     */
+    static inline off_t get_end_offset(const std::string &path)
+    {
+        int fd = open(path.c_str(), O_RDWR | O_CREAT, 0644);
+        if (fd < 0)
+        {
+            perror("open");
+            return -1;
+        }
+        ;
+        if(!~lseek(fd, 0, SEEK_END))
+        {
+            perror("lseek");
+            return - 1;
+        }
+        off_t end = lseek(fd, 0, SEEK_CUR);
+        close(fd);
+        return end;
+    }
+
+    /**
+     * read data from specific offset and length in a file
+     * @param fd file to be write for.
+     * @return -1 if fail to open, size if read successfully.
+     */
+    static inline size_t read_file(int fd, off_t offset, size_t len, void * buf)
+    {
+        if (fd < 0)
+        {
+            perror("open");
+            return -1;
+        }
+        if(~offset) lseek(fd, offset, SEEK_SET);
+        size_t count = read(fd, buf, len);
+        if(count != len)
+        {
+            perror("read");
+            return - 1;
+        }
+        return count;
+    }
+
+    /**
+     * write specific length of data into specific offset in a file
+     * @param fd file to be write for.
+     * @return -1 if fail to open, size if write successfully.
+     */
+    static inline size_t write_file(int fd, size_t len, void * buf)
+    {
+        if (fd < 0)
+        {
+            perror("open");
+            return -1;
+        }
+        size_t count = write(fd, buf, len);
+        if(count != len)
+        {
+            perror("write");
+            return - 1;
+        }
+        return count;
+    }
 }
+

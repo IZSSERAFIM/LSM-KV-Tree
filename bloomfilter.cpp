@@ -1,65 +1,39 @@
-#include"bloomfilter.h"
-#include"MurmurHash3.h"
-#include<fstream>
-#include"bits.h"
-const int BloomFilter::MAX_SZ=10240;
-BloomFilter::BloomFilter()
-{
-    bits=new Bits(MAX_SZ);
+#include "bloomfilter.hpp"
+#include "MurmurHash3.h"
+#include <cstring>
+
+bloomFilter::bloomFilter(int m, int k) : m(m), k(k) {
+    set = new bool[m];
+    std::memset(set, 0, m * sizeof(bool));
 }
-BloomFilter::BloomFilter(const std::list<std::pair<uint64_t,std::string>> &list)
-{
-    bits=new Bits(MAX_SZ);
-    for(auto &it:list)
-        insert(it.first);
+
+bloomFilter::~bloomFilter() {
+    delete[] set;
 }
-BloomFilter::BloomFilter(const BloomFilter &bf)
-{
-    bits=new Bits(*bf.bits);
+
+void bloomFilter::insert(const uint64_t s) {
+    uint64_t hash[4] = {0};
+    for (int i = 0; i < k; i++) {
+        MurmurHash3_x64_128(&s, sizeof(s), i, hash);
+        set[hash[i] % m] = true;
+    }
 }
-BloomFilter::BloomFilter(const std::string &filename)
-{
-    std::ifstream in(filename,std::ios::binary);
-    static char ignore_buf[32];
-    in.read((char*)ignore_buf,32);
-    unsigned int sz=(MAX_SZ-1)/sizeof(uint64_t)+1;
-    uint64_t *tmp=new uint64_t[sz];
-    for(unsigned int i=0;i<sz;++i)
-        in.read((char*)&tmp[i],8);
-    bits=new Bits(tmp,sz);
-    delete[] tmp;
-    in.close();
-}
-BloomFilter::~BloomFilter()
-{
-    delete bits;
-}
-const BloomFilter &BloomFilter::operator=(const BloomFilter &bf)
-{
-    *bits=*bf.bits;
-    return *this;
-}
-BloomFilter::operator char*() const
-{
-    return (char*)bits;
-}
-unsigned int BloomFilter::to_raw(uint64_t **dest) const
-{
-    return bits->to_raw(dest);
-}
-void BloomFilter::insert(uint64_t elem)
-{
-    unsigned int hash[4];
-    MurmurHash3_x64_128(&elem,sizeof(elem),1,hash);
-    for(unsigned int i=0;i<4;++i)
-        bits->set(hash[i]%MAX_SZ,true);
-}
-bool BloomFilter::find(uint64_t elem) const
-{
-    unsigned int hash[4];
-    MurmurHash3_x64_128(&elem,sizeof(elem),1,hash);
-    for(unsigned int i=0;i<4;++i)
-        if(!bits->get(hash[i]%MAX_SZ))
+
+bool bloomFilter::query(const uint64_t s) {
+    uint64_t hash[4] = {0};
+    for (int i = 0; i < k; i++) {
+        MurmurHash3_x64_128(&s, sizeof(s), i, hash);
+        if (!set[hash[i] % m]) {
             return false;
+        }
+    }
     return true;
+}
+
+bool* bloomFilter::getSet() {
+    return set;
+}
+
+int bloomFilter::getM() {
+    return m;
 }

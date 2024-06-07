@@ -1,4 +1,84 @@
-#include "sstable.hpp"
+#ifndef SSTABLE_H
+#define SSTABLE_H
+
+#include <vector>
+#include <string>
+#include <sstream>
+#include <unistd.h>
+#include <fcntl.h>
+#include "bloomfilter.hpp"
+#include "utils.h"
+
+#define VLOGPADDING 15
+
+struct head_type {
+    uint64_t stamp;//时间戳
+    uint64_t num_kv;//键值对数量
+    uint64_t max_k;//最大键
+    uint64_t min_k;//最小键
+};
+
+template<typename key_type, typename value_type>
+class SSTable {
+
+private:
+    int id;
+    int level;
+    head_type head;
+    bloomFilter *bloomfilter;
+    std::vector <key_type> keys;
+    std::vector <uint64_t> offsets;
+    std::vector <uint64_t> valueLens;
+    std::string dir_path;//SSTable 文件所在的目录
+    std::string vlog_path;//vlog 文件所在的目录路径
+
+    void write_sst() const;//将 SSTable 写入磁盘
+
+public:
+    //初始化 SSTable 的各个成员变量
+    SSTable(head_type head, int level, int id, bloomFilter *bloomFilter, std::vector <key_type> keys, std::vector <uint64_t> offsets, std::vector <uint64_t> valueLens, std::string dir_path, std::string vlog_path);
+
+    //从磁盘读取 SSTable 的数据并初始化成员变量
+    SSTable(int level, int id, std::string sst, std::string dir_path, std::string vlog_path, uint64_t bloomSize);
+
+    //析构函数
+    ~SSTable();
+
+    //从内存中获取指定键对应的值
+    value_type get(key_type key) const;
+
+    //从磁盘中获取键对应的值
+    value_type get_fromdisk(key_type key) const;
+
+    //获取键对应的偏移量
+    uint64_t get_offset(key_type key) const;
+
+    //扫描指定键范围内的所有键值对，并返回一个包含这些键值对的向量
+    std::vector <std::pair<key_type, value_type>> scan(key_type key1, key_type key2);
+
+    bool query(key_type);
+
+    void write_disk() const;
+
+    void delete_disk() const;
+
+    void set_id(int new_id);
+
+    uint64_t get_numkv() const;
+
+    uint64_t getStamp() const;
+
+    key_type get_maxk() const;
+
+    key_type get_mink() const;
+
+    std::vector <key_type> get_keys() const;
+
+    std::vector <uint64_t> get_offsets() const;
+
+    std::vector <uint64_t> get_valueLens() const;
+};
+
 
 template<typename key_type, typename value_type>
 SSTable<key_type, value_type>::SSTable(head_type head, int level, int id, bloomFilter *bloomFilter, std::vector <key_type> keys, std::vector <uint64_t> offsets, std::vector <uint64_t> valueLens, std::string dir_path, std::string vlog_path)
@@ -256,3 +336,5 @@ template<typename key_type, typename value_type>
 std::vector <uint64_t> SSTable<key_type, value_type>::get_valueLens() const {
     return valueLens;
 }
+
+#endif //SSTABLE_H

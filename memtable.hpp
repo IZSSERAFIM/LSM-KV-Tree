@@ -1,4 +1,89 @@
-#include "memtable.h"
+#ifndef MEMTABLE_H
+#define MEMTABLE_H
+
+#include <cstdint>
+#include <cassert>
+#include <vector>
+#include <string>
+#include <random>
+#include <time.h>
+#include <list>
+#include <iostream>
+#include "sstable.hpp"
+#include "utils.h"
+
+#define VLOGPADDING 15
+#define MAGIC 0xff
+
+template<typename key_type, typename value_type>
+class MemTable {
+
+private:
+    //用于控制新节点提升层数的概率
+    double p;
+    uint64_t bloomSize;
+    int max_layer;
+    int num_kv;
+
+    struct Node {
+        key_type key;
+        value_type value;
+        Node *down, *next;
+
+        Node(key_type k, value_type v, Node *d, Node *n) {
+            key = k;
+            value = v;
+            down = d;
+            next = n;
+        }
+    };
+
+    //存储每一层的头节点
+    std::vector<Node *> head;
+    //随机数生成器
+    std::mt19937_64 randSeed;
+    //用于生成 [0, 1) 之间的均匀分布的随机数
+    std::uniform_real_distribution<double> rand_double;
+
+    //将节点写入 vlog 文件
+    void write_vlog(Node *p, off_t &offset, int fd);
+
+    //获取新节点的层数
+    int getlayer();
+
+public:
+    //构造函数
+    explicit MemTable(double p, uint64_t bloomSize);
+
+    //析构函数
+    ~MemTable();
+
+    //在表中插入一个键值对
+    void put(key_type key, const value_type &val);
+
+    //删除一个键值对
+    bool del(key_type key);
+
+    //获取指定键对应的值
+    value_type get(key_type key) const;
+
+    //扫描指定键范围内的所有键值对，并返回一个包含这些键值对的向量
+    std::vector <std::pair<key_type, value_type>> scan(key_type key1, key_type key2) const;
+
+    //获取一个sstable大小
+    int size();
+
+    //获取键值对数量
+    int get_numkv();
+
+    //打印 memtable
+    void print_self();
+
+    //将 memtable 转换为 sstable
+    SSTable <key_type, value_type> * convertSSTable(int id, uint64_t stamp, const std::string &dir, const std::string &vlog);
+};
+
+
 
 template<typename key_type, typename value_type>
 MemTable<key_type, value_type>::MemTable(double p, uint64_t bloomSize) {
@@ -219,3 +304,5 @@ void MemTable<key_type, value_type>::write_vlog(Node *p, off_t &offset, int fd) 
     //新偏移量 offset，增加写入的长度 vlog_len
     offset += vlog_len;
 }
+
+#endif //MEMTABLE_H
