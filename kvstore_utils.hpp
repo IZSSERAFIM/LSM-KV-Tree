@@ -318,9 +318,10 @@ void KVStore::prepareNextLevel(int level) {
 
 void KVStore::mergeAndWriteSSTables(int level, int compact_size, std::vector<int>& index, std::vector<int>& it) {
     std::priority_queue <kv_info> kvs;
-    for (int i = index.size() - 1; i >= 0; i--) {
-        if (it[i] != layers[level + 1][index[i]]->get_numkv()) {
-            SSTable *sst = layers[level + 1][index[i]];
+    for (auto &index_i : index) {
+        int i = index_i;
+        if (it[i] != layers[level + 1][i]->get_numkv()) {
+            SSTable *sst = layers[level + 1][i];
             kvs.push(kv_info{sst->get_keys()[0], sst->get_valueLens()[0], sst->getStamp(), sst->get_offsets()[0], i});
             it[i]++;
         }
@@ -334,6 +335,7 @@ void KVStore::mergeAndWriteSSTables(int level, int compact_size, std::vector<int
             it.back()++;
         }
     }
+
     std::vector <kv_info> kv_list;
     while (!kvs.empty()) {
         kv_info min_kv = kvs.top();
@@ -358,24 +360,29 @@ void KVStore::mergeAndWriteSSTables(int level, int compact_size, std::vector<int
             it[min_kv.i]++;
         }
     }
-    for (int i = index.size() - 1; i >= 0; i--) {
-        std::vector<SSTable *>::iterator iter = layers[level + 1].begin() + index[i];
-        layers[level + 1][index[i]]->delete_disk();
-        delete layers[level + 1][index[i]];
+    for (auto it = index.rbegin(); it != index.rend(); ++it) {
+        auto iter = layers[level + 1].begin() + *it;
+        (*iter)->delete_disk();
+        delete *iter;
         layers[level + 1].erase(iter);
     }
-    for (int i = compact_size - 1; i >= 0; i--) {
-        std::vector<SSTable *>::iterator iter = layers[level].begin() + i;
-        layers[level][i]->delete_disk();
-        delete layers[level][i];
-        layers[level].erase(iter);
+
+    for (auto it = layers[level].rbegin(); it != layers[level].rend(); ++it) {
+        (*it)->delete_disk();
+        delete *it;
     }
-    for (int i = 0; i < layers[level].size(); i++) {
-        layers[level][i]->set_id(i);
+    layers[level].clear();
+
+    int id1 = 0;
+    for (auto &layer : layers[level]) {
+        layer->set_id(id1++);
     }
-    for (int i = 0; i < layers[level + 1].size(); i++) {
-        layers[level + 1][i]->set_id(i);
+
+    int id2 = 0;
+    for (auto &layer : layers[level + 1]) {
+        layer->set_id(id2++);
     }
+
     int max_kvnum = (SSTABLESIZE - bloomSize - HEADERSIZE) / 20;
     for (int i = 0; i < kv_list.size(); i += max_kvnum) {
         uint64_t max_key = 0;
