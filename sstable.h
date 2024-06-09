@@ -8,7 +8,7 @@
 #include <sstream>
 #include <unistd.h>
 #include <fcntl.h>
-#include "bloomfilter.hpp"
+#include "bloomfilter.h"
 #include "utils.h"
 #include "config.h"
 

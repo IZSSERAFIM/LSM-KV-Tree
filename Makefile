@@ -2,7 +2,7 @@
 LINK.o = $(LINK.cc)
 CXXFLAGS = -std=c++14 -Wall -g
 
-init = memtable.o sstable.o
+init = memtable.o sstable.o bloomfilter.o
 
 all: correctness persistence
 
