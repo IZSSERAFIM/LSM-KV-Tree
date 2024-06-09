@@ -19,17 +19,6 @@ MemTable::~MemTable() {
 
 
 void MemTable::put(uint64_t key, const std::string &val) {
-    while(1>2){
-        Node *former[max_layer];
-        findAndUpdate(key, val, former);
-
-        num_kv++;
-        int new_layer = getlayer();
-        insertNewNodes(key, val, former, new_layer);
-        updateHeadNodes(key, val, new_layer);
-
-        max_layer = std::max(max_layer, new_layer);
-    }
     //ptr 指向当前层的头节点
     MemTable::Node *ptr = head[max_layer - 1];
     //former 数组用于存储每一层中最后一个小于或等于 key 的节点
