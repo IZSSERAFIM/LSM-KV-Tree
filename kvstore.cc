@@ -26,9 +26,12 @@ bool operator<(kv_info a, kv_info b) {
 
 //运算符重载 <
 bool operator<(sst_info a, sst_info b) {
-    if (a.level == b.level)
+    if (a.level == b.level) {
         return a.id > b.id;
-    else return a.level > b.level;
+    }
+    else {
+        return a.level > b.level;
+    }
 }
 
 void KVStore::process_vlog() {
@@ -199,8 +202,8 @@ void KVStore::deleteAllSSTables() {
 void KVStore::deleteAllFilesInDir() {
     std::vector <std::string> files;
     utils::scanDir(dir_path, files);
-    for (int i = 0; i < files.size(); i++) {
-        utils::rmfile(files[i]);
+    for (const auto &file : files) {
+        utils::rmfile(file);
     }
 }
 

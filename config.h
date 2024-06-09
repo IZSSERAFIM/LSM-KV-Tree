@@ -24,6 +24,10 @@
 
 #define HEAD -0x7ffffff
 
+#define HEADHAED 0
+
+#define NONE "NONE"
+
 #define MINKEY 0x7fffffff
 
 
