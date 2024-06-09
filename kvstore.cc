@@ -272,7 +272,7 @@ void KVStore::scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, s
     }
     //剔除已经删除的kv
     //初始化删除标记
-    uint64_t last_delete = -0x7ffffff;
+    uint64_t last_delete = HEAD;
     while(!kvs.empty()) {
         //从优先队列中取出最小的键值对
         kv min_kv = kvs.top();
