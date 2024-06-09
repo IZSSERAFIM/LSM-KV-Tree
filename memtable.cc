@@ -105,25 +105,9 @@ std::string MemTable::get(uint64_t key) const {
 }
 
 
-std::vector <std::pair<uint64_t, std::string>> MemTable::scan(uint64_t key1, uint64_t key2) const {
-    MemTable::Node *ptr = head[max_layer - 1];
-    std::vector <std::pair<uint64_t, std::string>> result;
-    //查找起始位置
-    while (1) {
-        while (ptr->next && ptr->next->key < key1) {
-            ptr = ptr->next;
-        }
-        if (ptr->down) {
-            ptr = ptr->down;
-        } else break;
-    }
-    //扫描范围内的键值对
-    ptr = ptr->next;
-    while (ptr && ptr->key >= key1 && ptr->key <= key2) {
-        result.push_back(std::make_pair(ptr->key, ptr->value));
-        ptr = ptr->next;
-    }
-    return result;
+std::vector<std::pair<uint64_t, std::string>> MemTable::scan(uint64_t key1, uint64_t key2) const {
+    Node* start = findStartPosition(key1);
+    return collectRange(start, key1, key2);
 }
 
 

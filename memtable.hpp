@@ -105,3 +105,28 @@ void MemTable::deleteAllNodes() {
         deleteLayerNodes(*it);
     }
 }
+
+MemTable::Node* MemTable::findStartPosition(uint64_t key1) const {
+    Node *ptr = head[max_layer - 1];
+    while (true) {
+        while (ptr->next && ptr->next->key < key1) {
+            ptr = ptr->next;
+        }
+        if (ptr->down) {
+            ptr = ptr->down;
+        } else {
+            break;
+        }
+    }
+    return ptr->next;
+}
+
+std::vector<std::pair<uint64_t, std::string>> MemTable::collectRange(Node* start, uint64_t key1, uint64_t key2) const {
+    std::vector<std::pair<uint64_t, std::string>> result;
+    Node* ptr = start;
+    while (ptr && ptr->key >= key1 && ptr->key <= key2) {
+        result.push_back(std::make_pair(ptr->key, ptr->value));
+        ptr = ptr->next;
+    }
+    return result;
+}
