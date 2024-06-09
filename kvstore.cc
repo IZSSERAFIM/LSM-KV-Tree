@@ -61,12 +61,12 @@ void KVStore::process_vlog() {
 }
 
 void KVStore::process_sst(std::vector <std::string> &files, std::priority_queue <sst_info> &sstables) {
-    for (int i = 0; i < files.size(); i++) {
-        if (files[i].find('.') != -1) {
-            std::string file = files[i].substr(0, files[i].find('.'));
-            int level = atoi(file.substr(0, file.find('-')).c_str());
-            int id = atoi(file.substr(file.find('-') + 1, file.length()).c_str());
-            sstables.push(sst_info{level, id, files[i]});
+    for (const auto &file: files) {
+        if (file.find('.') != -1) {
+            std::string fileName = file.substr(0, file.find('.'));
+            int level = atoi(fileName.substr(0, fileName.find('-')).c_str());
+            int id = atoi(fileName.substr(fileName.find('-') + 1, fileName.length()).c_str());
+            sstables.push(sst_info{level, id, file});
         }
     }
 }
@@ -91,7 +91,6 @@ KVStore::KVStore(const std::string &dir, const std::string &vlog) : KVStoreAPI(d
     this->stamp = 0;
     this->head = 0;
     this->tail = 0;
-    this->test_type = 0;
     this->bloomSize = BLOOMSIZE;
     std::priority_queue <sst_info> sstables;
     std::vector <std::string> files;
@@ -147,14 +146,10 @@ std::string KVStore::getValueFromMemTable(uint64_t key) {
 
 std::string KVStore::getValueFromSSTable(uint64_t key) {
     std::string val = "";
-    for (int i = 0; i < layers.size(); i++) {
-        for (int j = layers[i].size() - 1; j >= 0; j--) {
-            if (test_type == 1 || test_type == 2 || layers[i][j]->query(key)) {
-                if (test_type == 2) {
-                    val = layers[i][j]->get_fromdisk(key);
-                } else {
-                    val = layers[i][j]->get(key);
-                }
+    for (const auto &layer: layers) {
+        for (auto it = layer.rbegin(); it != layer.rend(); ++it) {
+            if ((*it)->query(key)) {
+                val = (*it)->get(key);
                 if (val == "~DELETED~") {
                     return "";
                 } else if (val != "") {

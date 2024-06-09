@@ -15,7 +15,6 @@ private:
     uint64_t bloomSize;//布隆过滤器大小
     std::string dir_path;
     std::string vlog_path;
-    int test_type;
     MemTable  *memTable;
     std::vector<std::vector<SSTable *>> layers;//存储每一层的 SSTable
     void process_vlog();
