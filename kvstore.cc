@@ -111,15 +111,15 @@ KVStore::~KVStore() {
 }
 
 void KVStore::checkAndConvertMemTable() {
-    if(memTable -> size() >= SSTABLESIZE) {
-        layers[0].push_back(memTable -> convertSSTable(layers[0].size(), stamp ++, dir_path, vlog_path));
+    if (memTable->size() >= SSTABLESIZE) {
+        layers[0].push_back(memTable->convertSSTable(layers[0].size(), stamp++, dir_path, vlog_path));
         delete memTable;
-        memTable = new MemTable (0.5, bloomSize);
+        memTable = new MemTable(0.5, bloomSize);
     }
 }
 
 void KVStore::doCompaction() {
-    for(int i = 0; i < layers.size() && layers[i].size() > (1 << i + 2); i ++) {
+    for (int i = 0; i < layers.size() && layers[i].size() > (1 << i + 2); i++) {
         compaction(i);
     }
 }
@@ -131,15 +131,14 @@ void KVStore::doCompaction() {
 void KVStore::put(uint64_t key, const std::string &s) {
     checkAndConvertMemTable();
     doCompaction();
-    memTable -> put(key, s);
+    memTable->put(key, s);
 }
 
 std::string KVStore::getValueFromMemTable(uint64_t key) {
-    std::string val = memTable -> get(key);
+    std::string val = memTable->get(key);
     if (val == "~DELETED~") {
         return "";
-    }
-    else if(val != "") {
+    } else if (val != "") {
         return val;
     }
     return "";
@@ -147,14 +146,13 @@ std::string KVStore::getValueFromMemTable(uint64_t key) {
 
 std::string KVStore::getValueFromSSTable(uint64_t key) {
     std::string val = "";
-    for(int i = 0; i < layers.size(); i ++) {
+    for (int i = 0; i < layers.size(); i++) {
         for (int j = layers[i].size() - 1; j >= 0; j--) {
             if (layers[i][j]->query(key)) {
                 val = layers[i][j]->get(key);
                 if (val == "~DELETED~") {
                     return "";
-                }
-                else if (val != "") {
+                } else if (val != "") {
                     return val;
                 }
             }
@@ -207,9 +205,9 @@ bool KVStore::del(uint64_t key) {
 }
 
 void KVStore::deleteAllSSTables() {
-    for(int i = 0; i < layers.size(); i ++) {
-        for(int j = layers[i].size() - 1; j >= 0; j --) {
-            layers[i][j] -> delete_disk();
+    for (int i = 0; i < layers.size(); i++) {
+        for (int j = layers[i].size() - 1; j >= 0; j--) {
+            layers[i][j]->delete_disk();
             delete layers[i][j];
             layers[i].pop_back();
         }
@@ -219,7 +217,7 @@ void KVStore::deleteAllSSTables() {
 void KVStore::deleteAllFilesInDir() {
     std::vector <std::string> files;
     utils::scanDir(dir_path, files);
-    for(int i = 0; i < files.size(); i ++) {
+    for (int i = 0; i < files.size(); i++) {
         utils::rmfile(files[i]);
     }
 }
@@ -233,58 +231,148 @@ void KVStore::reset() {
     delete memTable;
     utils::rmfile(vlog_path);
     deleteAllFilesInDir();
-    memTable = new MemTable (0.5, bloomSize);
+    memTable = new MemTable(0.5, bloomSize);
 }
 
-void KVStore::getPairsFromMemTable( uint64_t key1, uint64_t key2, std::vector<std::vector<std::pair<uint64_t, std::string> > > & scanRes, std::vector<int> & it, std::priority_queue<kv> & kvs )
+void
+KVStore::getPairsFromMemTable(uint64_t key1, uint64_t key2, std::vector <std::vector<std::pair < uint64_t, std::string>>
+
+> & scanRes,
+std::vector<int> &it, std::priority_queue<kv>
+& kvs )
 {
-scanRes.push_back( memTable->scan( key1, key2 ) );
+scanRes.
+push_back( memTable
+->
+scan( key1, key2
+));
 it.push_back( 0 );
-if ( it.back() != scanRes.back().size() )
+if ( it.
+
+back()
+
+!= scanRes.
+
+back()
+
+.
+
+size()
+
+)
 {
-kvs.push( kv { scanRes.back()[0], stamp, 0 } );
-it.back()++;
+kvs.
+push( kv{scanRes.back()[0], stamp, 0}
+);
+it.
+
+back()
+
+++;
 }
 }
 
 
-void KVStore::getPairsFromSSTable( uint64_t key1, uint64_t key2, std::vector<std::vector<std::pair<uint64_t, std::string> > > & scanRes, std::vector<int> & it, std::priority_queue<kv> & kvs )
+void
+KVStore::getPairsFromSSTable(uint64_t key1, uint64_t key2, std::vector <std::vector<std::pair < uint64_t, std::string>>
+
+> & scanRes,
+std::vector<int> &it, std::priority_queue<kv>
+& kvs )
 {
-for ( int i = 0, sstSum = 0; i < layers.size(); sstSum += layers[i].size(), i++ )
+for (
+int i = 0, sstSum = 0;
+i<layers.
+
+size();
+
+sstSum += layers[i].
+
+size(), i
+
+++ )
 {
-for ( int j = 0; j < layers[i].size(); j++ )
+for (
+int j = 0;
+j<layers[i].
+
+size();
+
+j++ )
 {
-scanRes.push_back( layers[i][j]->scan( key1, key2 ) );
+scanRes.
+push_back( layers[i][j]
+->
+scan( key1, key2
+));
 it.push_back( 0 );
-if ( it.back() != scanRes.back().size() )
+if ( it.
+
+back()
+
+!= scanRes.
+
+back()
+
+.
+
+size()
+
+)
 {
-kvs.push( kv { scanRes.back()[0], layers[i][j]->getStamp(), sstSum + j + 1 } );
-it.back()++;
+kvs.
+push( kv{scanRes.back()[0], layers[i][j]->getStamp(), sstSum + j + 1}
+);
+it.
+
+back()
+
+++;
 }
 }
 }
 }
 
 
-void KVStore::removeDeletedPairs( std::list<std::pair<uint64_t, std::string> > & list, std::vector<std::vector<std::pair<uint64_t, std::string> > > & scanRes, std::vector<int> & it, std::priority_queue<kv> & kvs )
+void KVStore::removeDeletedPairs(std::list <std::pair<uint64_t, std::string>> &list,
+                                 std::vector <std::vector<std::pair < uint64_t, std::string>>
+
+> & scanRes,
+std::vector<int> &it, std::priority_queue<kv>
+& kvs )
 {
 uint64_t last_delete = HEAD;
-while ( !kvs.empty() )
+while ( !kvs.
+
+empty()
+
+)
 {
 kv min_kv = kvs.top();
-kvs.pop();
+kvs.
+
+pop();
+
 if ( last_delete != min_kv.kv_pair.first )
 {
 if ( min_kv.kv_pair.second == "~DELETED~" )
 {
 last_delete = min_kv.kv_pair.first;
 }else  {
-list.push_back( min_kv.kv_pair );
+list.
+push_back( min_kv
+.kv_pair );
 }
 }
-if ( it[min_kv.i] != scanRes[min_kv.i].size() )
+if ( it[min_kv.i] != scanRes[min_kv.i].
+
+size()
+
+)
 {
-kvs.push( kv { scanRes[min_kv.i][it[min_kv.i]], min_kv.stamp, min_kv.i } );
+kvs.
+push( kv{scanRes[min_kv.i][it[min_kv.i]], min_kv.stamp, min_kv.i}
+);
 it[min_kv.i]++;
 }
 }
@@ -296,81 +384,71 @@ it[min_kv.i]++;
  * An empty string indicates not found.
  */
 void KVStore::scan(uint64_t key1, uint64_t key2, std::list <std::pair<uint64_t, std::string>> &list) {
-    std::priority_queue<kv> kvs;
-    std::vector<std::vector<std::pair<uint64_t, std::string>>> scanRes;
+    std::priority_queue <kv> kvs;
+    std::vector < std::vector < std::pair < uint64_t, std::string>>> scanRes;
     std::vector<int> it;
     getPairsFromMemTable(key1, key2, scanRes, it, kvs);
     getPairsFromSSTable(key1, key2, scanRes, it, kvs);
     removeDeletedPairs(list, scanRes, it, kvs);
 }
 
-/**
- * This reclaims space from vLog by moving valid value and discarding invalid value.
- * chunk_size is the size in byte you should AT LEAST recycle.
- */
-void KVStore::gc(uint64_t chunk_size) {
-    //打开 vlog 文件
-    int fd = open(vlog_path.c_str(), O_RDWR, 0644);
-    //从vlog 的 tail 位置开始读有效数据
-    lseek(fd, tail, SEEK_SET);
-    char buf[BUFFER_SIZE];
-    read(fd, buf, 1);
-    uint64_t read_len = 0;
+uint64_t KVStore::readVlogAndWriteToMemTable(uint64_t chunk_size, int fd, char *buf, uint64_t &read_len) {
     uint64_t vlen;
     uint64_t key;
-    //读取 vlog 文件，将有效数据重新写入 memTable
+    bool isNewest = true;
     while (read_len < chunk_size && buf[0] == (char) MAGIC) {
-        //读取日志前缀，获取键和值的长度
         read(fd, buf, VLOGPADDING - 1);
         key = *(uint64_t * )(buf + 2);
         vlen = *(uint32_t * )(buf + 10);
-        //读value
         read(fd, buf, vlen);
-        bool isNewest = true;
-        //如果键不存在于 memTable 中，检查所有层的 SSTable 中最新的记录
         if (memTable->get(key) == "") {
             for (int i = 0; i < layers.size() && isNewest; i++) {
                 for (int j = layers[i].size() - 1; j >= 0 && isNewest; j--) {
                     if (layers[i][j]->query(key)) {
                         off_t offset = layers[i][j]->get_offset(key);
-                        //如果偏移量不是1，即不是MAGIC
                         if (offset != 1) {
-                            //设置buf的结尾
                             buf[vlen] = 0;
-                            //offset 指向该vLog entry
                             if (offset != 2 && offset == read_len + tail) {
-                                //将该vLog entry 重新插入到MemTable 中
                                 put(key, buf);
-                            }
-                                //vLog entry 记录的是过期的数据，不做处理
-                            else {
+                            } else {
                                 isNewest = false;
                             }
                         }
                     }
                 }
             }
-        }
-            //如果键存在于 memTable 中，说明是最新的数据，直接跳过这个vlog entry
-        else {
-            //更新读取长度vlog entry的长度
+        } else {
             read_len = read_len + VLOGPADDING + vlen;
-            //读取下一个字节
             read(fd, buf, 1);
         }
     }
-    close(fd);
-    //将 memTable 转换为 SSTable 并添加到第 0 层
+    return read_len;
+}
+
+void KVStore::convertMemTableToSSTable() {
     layers[0].push_back(memTable->convertSSTable(layers[0].size(), stamp++, dir_path, vlog_path));
     delete memTable;
-    //进行compaction
+    memTable = new MemTable(0.5, bloomSize);
+}
+
+
+/**
+ * This reclaims space from vLog by moving valid value and discarding invalid value.
+ * chunk_size is the size in byte you should AT LEAST recycle.
+ */
+void KVStore::gc(uint64_t chunk_size) {
+    int fd = open(vlog_path.c_str(), O_RDWR, 0644);
+    lseek(fd, tail, SEEK_SET);
+    char buf[BUFFER_SIZE];
+    read(fd, buf, 1);
+    uint64_t read_len = 0;
+    read_len = readVlogAndWriteToMemTable(chunk_size, fd, buf, read_len);
+    close(fd);
+    convertMemTableToSSTable();
     for (int i = 0; i < layers.size() && layers[i].size() > (1 << i + 2); i++) {
         compaction(i);
     }
-    memTable = new MemTable(0.5, bloomSize);
-    //使用de_alloc_file() 帮助函数对扫描过的vLog 文件区域从tail开始访问过的read_len长度打洞
     utils::de_alloc_file(vlog_path, tail, read_len);
-    //更新tail
     tail = read_len + tail;
 }
 
