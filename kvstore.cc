@@ -187,11 +187,11 @@ bool KVStore::del(uint64_t key) {
 }
 
 void KVStore::deleteAllSSTables() {
-    for (int i = 0; i < layers.size(); i++) {
-        for (int j = layers[i].size() - 1; j >= 0; j--) {
-            layers[i][j]->delete_disk();
-            delete layers[i][j];
-            layers[i].pop_back();
+    for (auto &layer : layers) {
+        while (!layer.empty()) {
+            layer.back()->delete_disk();
+            delete layer.back();
+            layer.pop_back();
         }
     }
 }
@@ -252,60 +252,19 @@ back()
 }
 }
 
-void
-KVStore::getPairsFromSSTable(uint64_t key1, uint64_t key2, std::vector <std::vector<std::pair < uint64_t, std::string>>
-
->& scanRes,
-std::vector<int> &it, std::priority_queue<kv>
-& kvs) {
-for(
-int i = 0, sstSum = 0;
-i<layers.
-
-size();
-
-sstSum += layers[i].
-
-size(), i
-
-++) {
-for (
-int j = 0;
-j<layers[i].
-
-size();
-
-j++) {
-scanRes.
-push_back(layers[i][j]
-->
-scan(key1, key2
-));
-it.push_back(0);
-if (it.
-
-back()
-
-!= scanRes.
-
-back()
-
-.
-
-size()
-
-) {
-kvs.
-push(kv{scanRes.back()[0], layers[i][j]->getStamp(), sstSum + j + 1}
-);
-it.
-
-back()
-
-++;
-}
-}
-}
+void KVStore::getPairsFromSSTable(uint64_t key1, uint64_t key2, std::vector<std::vector<std::pair<uint64_t, std::string>>>& scanRes, std::vector<int>& it, std::priority_queue<kv>& kvs) {
+    int sstSum = 0;
+    for (auto &layer : layers) {
+        for (int j = 0; j < layer.size(); j++) {
+            scanRes.push_back(layer[j]->scan(key1, key2));
+            it.push_back(0);
+            if (it.back() != scanRes.back().size()) {
+                kvs.push(kv{scanRes.back()[0], layer[j]->getStamp(), sstSum + j + 1});
+                it.back()++;
+            }
+        }
+        sstSum += layer.size();
+    }
 }
 
 void KVStore::removeDeletedPairs(std::list <std::pair<uint64_t, std::string>> &list,
@@ -372,10 +331,11 @@ uint64_t KVStore::readVlogAndWriteToMemTable(uint64_t chunk_size, int fd, char *
         vlen = *(uint32_t * )(buf + 10);
         read(fd, buf, vlen);
         if (memTable->get(key) == "") {
-            for (int i = 0; i < layers.size() && isNewest; i++) {
-                for (int j = layers[i].size() - 1; j >= 0 && isNewest; j--) {
-                    if (layers[i][j]->query(key)) {
-                        off_t offset = layers[i][j]->get_offset(key);
+            for (const auto &layer : layers) {
+                if (!isNewest) break;
+                for (auto it = layer.rbegin(); it != layer.rend(); ++it) {
+                    if ((*it)->query(key)) {
+                        off_t offset = (*it)->get_offset(key);
                         if (offset != 1) {
                             buf[vlen] = 0;
                             if (offset != 2 && offset == read_len + tail) {
@@ -414,9 +374,7 @@ void KVStore::gc(uint64_t chunk_size) {
     read_len = readVlogAndWriteToMemTable(chunk_size, fd, buf, read_len);
     close(fd);
     convertMemTableToSSTable();
-    for (int i = 0; i < layers.size() && layers[i].size() > (1 << i + 2); i++) {
-        compaction(i);
-    }
+    doCompaction();
     utils::de_alloc_file(vlog_path, tail, read_len);
     tail = read_len + tail;
 }
@@ -431,9 +389,12 @@ int KVStore::determineCompactSize(int level) {
 }
 
 void KVStore::updateMinMaxKeys(int compact_size, uint64_t &min_key, uint64_t &max_key, int level) {
-    for (int i = 0; i < compact_size; i++) {
-        max_key = std::max(max_key, layers[level][i]->get_maxkey());
-        min_key = std::min(min_key, layers[level][i]->get_minkey());
+    int i = 0;
+    for (const auto &layer : layers[level]) {
+        if (i >= compact_size) break;
+        max_key = std::max(max_key, layer->get_maxkey());
+        min_key = std::min(min_key, layer->get_minkey());
+        i++;
     }
 }
 
@@ -443,34 +404,35 @@ void KVStore::prepareNextLayer(int level) {
     }
 }
 
-void KVStore::collectOverlappingSSTables(int level, uint64_t min_key, uint64_t max_key, std::vector<int> &index,
-                                         std::vector<int> &it) {
-    for (int i = 0; i < layers[level + 1].size(); i++) {
-        if (layers[level + 1][i]->get_minkey() <= max_key && layers[level + 1][i]->get_maxkey() >= min_key) {
+void KVStore::collectOverlappingSSTables(int level, uint64_t min_key, uint64_t max_key, std::vector<int> &index, std::vector<int> &it) {
+    int i = 0;
+    for (const auto &layer : layers[level + 1]) {
+        if (layer->get_minkey() <= max_key && layer->get_maxkey() >= min_key) {
             index.push_back(i);
             it.push_back(0);
         }
+        i++;
     }
 }
 
-void
-KVStore::addKVToPriorityQueue(int level, int compact_size, std::vector<int> &it, std::priority_queue <kv_info> &kvs,
-                              std::vector<int> &index) {
-    for (int i = index.size() - 1; i >= 0; i--) {
-        if (it[i] != layers[level + 1][index[i]]->get_numkv()) {
-            SSTable *sst = layers[level + 1][index[i]];
-            kvs.push(kv_info{sst->get_keys()[0], sst->get_valueLens()[0], sst->getStamp(), sst->get_offsets()[0], i});
-            it[i]++;
+void KVStore::addKVToPriorityQueue(int level, int compact_size, std::vector<int> &it, std::priority_queue<kv_info> &kvs, std::vector<int> &index) {
+    int i = index.size();
+    for (auto idx = index.rbegin(); idx != index.rend(); ++idx, --i) {
+        if (it[i-1] != layers[level + 1][*idx]->get_numkv()) {
+            SSTable *sst = layers[level + 1][*idx];
+            kvs.push(kv_info{sst->get_keys()[0], sst->get_valueLens()[0], sst->getStamp(), sst->get_offsets()[0], i-1});
+            it[i-1]++;
         }
     }
-    for (int i = 0; i < compact_size; i++) {
+    i = 0;
+    for (auto &layer : layers[level]) {
+        if (i >= compact_size) break;
         it.push_back(0);
-        if (it.back() != layers[level][i]->get_numkv()) {
-            SSTable *sst = layers[level][i];
-            kvs.push(kv_info{sst->get_keys()[0], sst->get_valueLens()[0], sst->getStamp(), sst->get_offsets()[0],
-                             i + index.size()});
+        if (it.back() != layer->get_numkv()) {
+            kvs.push(kv_info{layer->get_keys()[0], layer->get_valueLens()[0], layer->getStamp(), layer->get_offsets()[0], i + index.size()});
             it.back()++;
         }
+        i++;
     }
 }
 
@@ -506,26 +468,28 @@ KVStore::collectKVList(std::vector<int> &it, std::priority_queue <kv_info> &kvs,
 }
 
 void KVStore::deleteOldSSTables(int level, std::vector<int> &index, int compact_size) {
-    for (int i = index.size() - 1; i >= 0; i--) {
-        std::vector<SSTable *>::iterator iter = layers[level + 1].begin() + index[i];
-        layers[level + 1][index[i]]->delete_disk();
-        delete layers[level + 1][index[i]];
-        layers[level + 1].erase(iter);
+    int i = index.size();
+    for (auto idx = index.rbegin(); idx != index.rend(); ++idx, --i) {
+        layers[level + 1][*idx]->delete_disk();
+        delete layers[level + 1][*idx];
+        layers[level + 1].erase(layers[level + 1].begin() + *idx);
     }
-    for (int i = compact_size - 1; i >= 0; i--) {
-        std::vector<SSTable *>::iterator iter = layers[level].begin() + i;
-        layers[level][i]->delete_disk();
-        delete layers[level][i];
-        layers[level].erase(iter);
+    i = compact_size;
+    for (auto iter = layers[level].rbegin(); iter != layers[level].rbegin() + compact_size; ++iter, --i) {
+        (*iter)->delete_disk();
+        delete *iter;
+        layers[level].erase(layers[level].begin() + i - 1);
     }
 }
 
 void KVStore::updateSSTableIndices(int level) {
-    for (int i = 0; i < layers[level].size(); i++) {
-        layers[level][i]->set_id(i);
+    int i = 0;
+    for (auto &layer : layers[level]) {
+        layer->set_id(i++);
     }
-    for (int i = 0; i < layers[level + 1].size(); i++) {
-        layers[level + 1][i]->set_id(i);
+    i = 0;
+    for (auto &layer : layers[level + 1]) {
+        layer->set_id(i++);
     }
 }
 
