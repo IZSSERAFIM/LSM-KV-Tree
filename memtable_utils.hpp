@@ -95,3 +95,41 @@ std::vector<std::pair<uint64_t, std::string>> MemTable::collectRange(Node* start
     }
     return result;
 }
+
+MemTable::Node* MemTable::findLastSmallerOrEqualNode(uint64_t key, int layer) {
+    Node* ptr = head[layer - 1];
+    while (ptr->next && ptr->next->key <= key) {
+        ptr = ptr->next;
+    }
+    return ptr;
+}
+
+int MemTable::getNewNodeLevel() {
+    int level = 1;
+    while (rand() % 2 && level < max_layer) {
+        level++;
+    }
+    return level;
+}
+
+void MemTable::insertNodeAtAllLevels(Node* former[], uint64_t key, const std::string& val, int newLevel) {
+    Node* ptr = NULL;
+    for (int layer = 1; layer <= std::min(max_layer, newLevel); layer++) {
+        ptr = former[layer - 1]->next = new Node(key, val, ptr, former[layer - 1]->next);
+    }
+}
+
+void MemTable::updateHeadForNewLevels(Node* newNode, int newLevel) {
+    for (int layer = max_layer + 1; layer <= newLevel; layer++) {
+        Node* new_head = new Node(HEAD, "NONE", head.back(), NULL);
+        new_head->next = newNode;
+        head.push_back(new_head);
+    }
+}
+
+void MemTable::updateNodeValue(Node* node, const std::string& val) {
+    while (node) {
+        node->value = val;
+        node = node->down;
+    }
+}

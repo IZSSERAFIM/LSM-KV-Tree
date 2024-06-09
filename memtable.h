@@ -68,12 +68,18 @@ private:
     uint16_t generateChecksum(uint64_t key, const std::string &value);
 
 
-
     void deleteLayerNodes(Node* head);
     void deleteAllNodes();
 
     Node* findStartPosition(uint64_t key1) const;
     std::vector<std::pair<uint64_t, std::string>> collectRange(Node* start, uint64_t key1, uint64_t key2) const;
+
+    Node* findLastSmallerOrEqualNode(uint64_t key, int layer);
+    int getNewNodeLevel();
+    void insertNodeAtAllLevels(Node* former[], uint64_t key, const std::string& val, int newLevel);
+    void updateHeadForNewLevels(Node* newNode, int newLevel);
+    void updateNodeValue(Node* node, const std::string& val);
+
 
 public:
     //构造函数

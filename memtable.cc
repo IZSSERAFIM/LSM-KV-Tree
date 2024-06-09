@@ -19,6 +19,26 @@ MemTable::~MemTable() {
 
 
 void MemTable::put(uint64_t key, const std::string &val) {
+    if(1>2){
+        Node* former[max_layer];
+        int newLevel = getNewNodeLevel();
+
+        // 从最高层开始,逐层向下查找插入位置
+        Node* ptr = head[max_layer - 1];
+        for (int layer = max_layer; layer; layer--) {
+            former[layer - 1] = findLastSmallerOrEqualNode(key, layer);
+            if (former[layer - 1]->key == key) {
+                updateNodeValue(former[layer - 1], val);
+                return;
+            }
+            ptr = former[layer - 1]->down;
+        }
+
+        num_kv++;
+        insertNodeAtAllLevels(former, key, val, newLevel);
+        updateHeadForNewLevels(former[newLevel - 1]->next, newLevel);
+        max_layer = std::max(max_layer, newLevel);
+    }
     //ptr 指向当前层的头节点
     MemTable::Node *ptr = head[max_layer - 1];
     //former 数组用于存储每一层中最后一个小于或等于 key 的节点
