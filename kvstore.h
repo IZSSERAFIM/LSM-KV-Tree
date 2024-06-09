@@ -30,6 +30,8 @@ private:
     void getPairsFromMemTable(uint64_t key1, uint64_t key2, std::vector<std::vector<std::pair<uint64_t, std::string>>>& scanRes, std::vector<int>& it, std::priority_queue<kv>& kvs);
     void getPairsFromSSTable(uint64_t key1, uint64_t key2, std::vector<std::vector<std::pair<uint64_t, std::string>>>& scanRes, std::vector<int>& it, std::priority_queue<kv>& kvs);
     void removeDeletedPairs(std::list<std::pair<uint64_t, std::string>>& list, std::vector<std::vector<std::pair<uint64_t, std::string>>>& scanRes, std::vector<int>& it, std::priority_queue<kv>& kvs);
+    uint64_t readVlogAndWriteToMemTable(uint64_t chunk_size, int fd, char* buf, uint64_t& read_len);
+    void convertMemTableToSSTable();
     void compaction(int level);
 
 public:
@@ -49,3 +51,4 @@ public:
 
 	void gc(uint64_t chunk_size) override;
 };
+
