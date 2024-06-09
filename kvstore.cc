@@ -84,11 +84,6 @@ void KVStore::write_sst(std::priority_queue <sst_info> &sstables) {
     }
 }
 
-/**
- * Demo consturctor used for test
- * !! cannot persistence !!
- * @param bloomSize bloomFilter size
-*/
 KVStore::KVStore(const std::string &dir, const std::string &vlog) : KVStoreAPI(dir, vlog) {
     this->memTable = new MemTable(0.5, BLOOMSIZE);
     this->dir_path = dir;
