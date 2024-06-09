@@ -30,7 +30,7 @@ void KVStore::write_sst(std::priority_queue <sst_info> &sstables) {
     }
 }
 
-uint64_t    KVStore::readVlogAndWriteToMemTable(uint64_t chunk_size, int fd, char *buf, uint64_t &read_len) {
+uint64_t KVStore::readVlogAndWriteToMemTable(uint64_t chunk_size, int fd, char *buf, uint64_t &read_len) {
     uint64_t vlen;
     uint64_t key;
     bool isNewest = true;
@@ -63,6 +63,7 @@ uint64_t    KVStore::readVlogAndWriteToMemTable(uint64_t chunk_size, int fd, cha
     }
     return read_len;
 }
+
 int KVStore::determineCompactSize(int level) {
     int compact_size = level ? layers[level].size() / 2 : layers[level].size();
     uint64_t max_stamp = layers[level][compact_size - 1]->getStamp();
@@ -97,6 +98,7 @@ void KVStore::createNewSSTables(int level, std::vector <kv_info> &kv_list) {
         layers[level + 1].push_back(sst);
     }
 }
+
 void KVStore::process_vlog() {
     if (utils::fileExists(vlog_path)) {
         tail = utils::seek_data_block(vlog_path);
@@ -126,7 +128,9 @@ void KVStore::process_vlog() {
     }
 }
 
-std::vector <kv_info> KVStore::collectKVList(std::vector<int> &it, std::priority_queue <kv_info> &kvs, int level, std::vector<int> &index,int compact_size) {
+std::vector <kv_info>
+KVStore::collectKVList(std::vector<int> &it, std::priority_queue <kv_info> &kvs, int level, std::vector<int> &index,
+                       int compact_size) {
     std::vector <kv_info> kv_list;
     while (!kvs.empty()) {
         kv_info min_kv = kvs.top();
@@ -156,7 +160,7 @@ std::vector <kv_info> KVStore::collectKVList(std::vector<int> &it, std::priority
 }
 
 void KVStore::removeDeletedPairs(std::list <std::pair<uint64_t, std::string>> &list,
-                        std::vector <std::vector<std::pair < uint64_t, std::string>>
+                                 std::vector <std::vector<std::pair < uint64_t, std::string>>
 
 > & scanRes,
 std::vector<int> &it, std::priority_queue<kv>

@@ -1,4 +1,5 @@
 #include "memtable.h"
+#include "memtable.hpp"
 
 MemTable::MemTable(double p, uint64_t bloomSize) {
     this->p = p;
@@ -7,20 +8,18 @@ MemTable::MemTable(double p, uint64_t bloomSize) {
     num_kv = 0;
     rand_double = std::uniform_real_distribution<double>(0, 1);
     //初始化头节点
-    MemTable::Node *new_head = new MemTable::Node(HEAD, std::string("NONE"), NULL, NULL);
-    //添加头节点到头节点向量
-    head.push_back(new_head);
+    head.push_back(new Node(HEAD, "NONE", nullptr, nullptr));
     //初始化随机数生成器
     randSeed.seed(time(0));
 }
 
 MemTable::~MemTable() {
-    //定义两个指针变量 ptr 和 now_p，用于遍历和删除节点
+    // 定义两个指针变量 ptr 和 now_p，用于遍历和删除节点
     MemTable::Node *ptr, *now_p;
-    //遍历每一层的头节点
-    for (int layer = max_layer; layer; layer--) {
-        //初始化 ptr 为当前层的头节点的下一个节点
-        MemTable::Node *ptr = head[layer - 1]->next;
+    // 遍历每一层的头节点，从最高层到最低层
+    for (auto it = head.rbegin(); it != head.rend(); ++it) {
+        // 初始化 ptr 为当前层的头节点的下一个节点
+        ptr = (*it)->next;
         while (ptr) {
             now_p = ptr;
             ptr = ptr->next;
@@ -28,6 +27,7 @@ MemTable::~MemTable() {
         }
     }
 }
+
 
 void MemTable::put(uint64_t key, const std::string &val) {
     //ptr 指向当前层的头节点
@@ -62,7 +62,7 @@ void MemTable::put(uint64_t key, const std::string &val) {
     }
     //如果新节点的层数超过当前最大层数，则增加层数，并创建新的头节点
     for (int layer = max_layer + 1; layer <= new_layer; layer++) {
-        MemTable::Node *new_head = new MemTable::Node(HEAD, std::string("NONE"), head.back(), NULL);
+        MemTable::Node *new_head = new MemTable::Node(HEAD, "NONE", head.back(), NULL);
         ptr = new_head->next = new MemTable::Node(key, val, ptr, NULL);
         head.push_back(new_head);
     }
@@ -84,7 +84,7 @@ bool MemTable::del(uint64_t key) {
     if (val == "~DELETED~" || val == "") {
         return false;
     }
-    put(key, std::string("~DELETED~"));
+    put(key, "~DELETED~");
     return true;
 }
 
@@ -136,61 +136,19 @@ int MemTable::get_numkv() {
     return num_kv;
 }
 
-
-void MemTable::print_self() {
-    if (num_kv > 5) return;
-    std::cout << "max_layer " << max_layer << std::endl;
-    for (int layer = max_layer; layer; layer--) {
-        for (MemTable::Node *ptr = head[layer - 1]; ptr; ptr = ptr->next) {
-            std::cout << '[' << ptr->key << ", " << ptr->value << "] ";
-        }
-        std::cout << std::endl;
-    }
-}
-
-
-SSTable *
-MemTable::convertSSTable(int id, uint64_t stamp, const std::string &dir,
-                         const std::string &vlog) {
-    //获取vlog文件的末尾偏移量
-    off_t offset = (off_t) utils::get_end_offset(vlog);
+SSTable *MemTable::convertSSTable(int id, uint64_t stamp, const std::string &dir, const std::string &vlog) {
+    off_t offset;
+    int fd;
     uint64_t max_k = 0;
     uint64_t min_k = MINKEY;
-    std::vector <uint64_t> keys;
-    std::vector <uint64_t> offsets;
-    std::vector <uint64_t> valueLens;
-    bloomFilter *bloom_p = new bloomFilter(bloomSize, 3);
-    MemTable::Node *ptr = head[0];
-    int fd = open(vlog.c_str(), O_RDWR | O_CREAT | O_APPEND, 0644);
-    //将文件指针移动到末尾偏移量 offset
-    lseek(fd, offset, SEEK_SET);
-    while (ptr->next) {
-        MemTable::Node *p = ptr->next;
-        bloom_p->insert(p->key);
-        keys.push_back(p->key);
-        offsets.push_back(offset);
-        if (p->value != "~DELETED~") {
-            if (p->key > max_k) {
-                max_k = p->key;
-            }
-            if (p->key < min_k) {
-                min_k = p->key;
-            }
-            valueLens.push_back(p->value.length());
-            write_vlog(p, offset, fd);
-        } else {
-            valueLens.push_back(0);
-        }
-        ptr = ptr->next;
-    }
-    close(fd);
-    //创建一个新的 SSTable 对象，传入元数据、布隆过滤器、键、偏移量和值的长度等参数
-    SSTable *sst = new SSTable({stamp, num_kv, max_k, min_k}, 0, id,
-                               bloom_p, keys, offsets, valueLens, dir,
-                               vlog);
-    //将 SSTable 写入磁盘
-    sst->write_disk();
-    //返回创建的 SSTable 对象指针
+    std::vector <uint64_t> keys, offsets, valueLens;
+    bloomFilter *bloom_p;
+
+    initializeConversion(vlog, offset, fd, keys, offsets, valueLens, bloom_p);
+    processNodes(fd, offset, keys, offsets, valueLens, bloom_p, max_k, min_k);
+    SSTable *sst;
+    finalizeConversion(fd, sst, id, stamp, dir, vlog, bloom_p, keys, offsets, valueLens, max_k, min_k);
+
     return sst;
 }
 
@@ -198,19 +156,8 @@ MemTable::convertSSTable(int id, uint64_t stamp, const std::string &dir,
 void MemTable::write_vlog(Node *p, off_t &offset, int fd) {
     size_t vlog_len = p->value.length() + VLOGPADDING;
     char buf[vlog_len + 5];
-    strcpy(buf + VLOGPADDING, p->value.c_str());
-    //开始符号 Magic (1 Byte)
-    buf[0] = MAGIC;
-    //最后一个字节为 0
-    buf[vlog_len] = 0;
-    //Checksum (2 Byte)
-    *(uint16_t * )(buf + 1) = utils::generate_checksum(p->key, p->value.length(), p->value);
-    //Key  (8  Byte)
-    *(uint64_t * )(buf + 3) = p->key;
-    //vlen (4 Byte)
-    *(uint32_t * )(buf + 11) = (uint32_t) p->value.length();
-    //调用 utils::write_file 函数将缓冲区 buf 中的vlog entry记录写入文件 fd
-    utils::write_file(fd, vlog_len, buf);
-    //新偏移量 offset，增加写入的长度 vlog_len
+    prepareBuffer(p, buf, vlog_len);
+    writeBuffer(fd, buf, vlog_len); // 传递 char* 类型的指针
     offset += vlog_len;
 }
+

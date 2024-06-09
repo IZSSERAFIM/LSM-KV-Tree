@@ -50,6 +50,23 @@ private:
     //获取新节点的层数
     int getlayer();
 
+    void initializeConversion(const std::string &vlog, off_t &offset, int &fd, std::vector <uint64_t> &keys,
+                              std::vector <uint64_t> &offsets, std::vector <uint64_t> &valueLens,
+                              bloomFilter *&bloom_p);
+
+    void processNodes(int fd, off_t &offset, std::vector <uint64_t> &keys, std::vector <uint64_t> &offsets,
+                      std::vector <uint64_t> &valueLens, bloomFilter *bloom_p, uint64_t &max_k, uint64_t &min_k);
+
+    void
+    finalizeConversion(int fd, SSTable *&sst, int id, uint64_t stamp, const std::string &dir, const std::string &vlog,
+                       bloomFilter *bloom_p, const std::vector <uint64_t> &keys, const std::vector <uint64_t> &offsets,
+                       const std::vector <uint64_t> &valueLens, uint64_t max_k, uint64_t min_k);
+
+    void prepareBuffer(Node *p, char *buf, size_t vlog_len);
+
+    void writeBuffer(int fd, char *buf, size_t vlog_len); // 修改参数类型为 char*
+    uint16_t generateChecksum(uint64_t key, const std::string &value);
+
 public:
     //构造函数
     explicit MemTable(double p, uint64_t bloomSize);
@@ -74,9 +91,6 @@ public:
 
     //获取键值对数量
     int get_numkv();
-
-    //打印 memtable
-    void print_self();
 
     //将 memtable 转换为 sstable
     SSTable *convertSSTable(int id, uint64_t stamp, const std::string &dir, const std::string &vlog);
