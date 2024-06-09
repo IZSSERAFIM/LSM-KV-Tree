@@ -1,4 +1,5 @@
 #include "sstable.h"
+#include "sstable_utils.hpp"
 
 SSTable::SSTable(head_type head, int level, int id, bloomFilter *bloomFilter, std::vector <uint64_t> keys,
                  std::vector <uint64_t> offsets, std::vector <uint64_t> valueLens, std::string dir_path,
@@ -15,42 +16,30 @@ SSTable::SSTable(head_type head, int level, int id, bloomFilter *bloomFilter, st
 }
 
 
-SSTable::SSTable(int level, int id, std::string sstFilename, std::string dir_path, std::string vlog_path,
-                 uint64_t bloomSize) {
+SSTable::SSTable(int level, int id, std::string sstFilename, std::string dir_path, std::string vlog_path, uint64_t bloomSize) {
     this->level = level;
     this->id = id;
     this->dir_path = dir_path;
     this->vlog_path = vlog_path;
     sstFilename = dir_path + "/" + sstFilename;
-    //定义一个缓冲区 `buf`，用于读取文件内容。
-    char buf[64] = {0};
-    //使用 open 函数以读写模式打开文件，文件权限为 0644
+
+    // Open the file
     int fd = open(sstFilename.c_str(), O_RDWR, 0644);
-    //读取文件的前 32 字节，存入 `buf` 中。
-    utils::read_file(fd, -1, 32, buf);
-    //将 `buf` 中的内容分别赋值给 `head` 的成员变量。
-    //`stamp` 为时间戳，`num_kv` 为键值对数量，`min_key` 为最小键，`max_key` 为最大键。
-    head.stamp = *(uint64_t *) buf;
-    head.num_kv = *(uint64_t * )(buf + 8);
-    head.min_key = *(uint64_t * )(buf + 16);
-    head.max_key = *(uint64_t * )(buf + 24);
-    //创建一个布隆过滤器 `bloomfilter`，大小为 `bloomSize`，哈希函数个数为 3。
-    bloomfilter = new bloomFilter(bloomSize, 3);
-    //使用 utils::read_file 函数读取布隆过滤器的数据到 bloomfilter 的数组中
-    utils::read_file(fd, -1, bloomfilter->getM(), bloomfilter->getSet());
-    uint64_t key;
-    uint64_t offset;
-    uint64_t valueLen;
-    //循环 head.num_kv 次，每次读取 20 个字节到缓冲区 buf 中，然后将 buf 中的内容分别赋值给 key、offset、valueLen。
-    for (int i = 0; i < head.num_kv; i++) {
-        utils::read_file(fd, -1, 20, buf);
-        key = *(uint64_t *) buf;
-        offset = *(uint64_t * )(buf + 8);
-        valueLen = *(uint32_t * )(buf + 16);
-        keys.push_back(key);
-        offsets.push_back(offset);
-        valueLens.push_back(valueLen);
+    if (fd == -1) {
+        // Handle error
+        throw std::runtime_error("Failed to open file: " + sstFilename);
     }
+
+    // Read header
+    readHeader(fd);
+
+    // Initialize bloom filter
+    initializeBloomFilter(fd, bloomSize);
+
+    // Read key-value pairs
+    readKeyValuePairs(fd);
+
+    // Close the file
     close(fd);
 }
 
@@ -62,82 +51,56 @@ SSTable::~SSTable() {
 
 
 std::string SSTable::get(uint64_t key) const {
-    //使用 std::lower_bound 在 keys 向量中查找不小于 key 的第一个元素的位置
-    typename std::vector<uint64_t>::const_iterator iter = std::lower_bound(keys.begin(), keys.end(), key);
-    //检查键是否存在于 keys 向量中
+    auto iter = findKey(key);
     if (iter != keys.end() && *iter == key) {
-        //计算目标键在 keys 向量中的索引 index
         int index = int(iter - keys.begin());
-        //使用索引 index 获取对应的偏移量 offset 和值的长度 size
         off_t offset = offsets[index];
         size_t size = valueLens[index];
-        //如果 size 不为零，说明值存在
         if (size) {
-            //定义一个大小为 VLOGPADDING + size + 5 的缓冲区 buf，并初始化为零
-            char buf[VLOGPADDING + size + 5] = {0};
-            //使用 utils::read_file 函数从 vlog_path 路径下的 vlog 文件中读取 size + VLOGPADDING 字节的数据即Vlog Entry对到缓冲区 buf
-            utils::read_file(vlog_path, offset, VLOGPADDING + size, buf);
-            //返回缓冲区中从 VLOGPADDING 偏移开始的字符串，表示Vlog Entry中的Value
-            return std::string(buf + VLOGPADDING);
-        }
-            //如果 size 为零，说明值已被删除
-        else {
+            return readValueFromVlog(offset, size);
+        } else {
             return std::string("~DELETED~");
         }
     }
-    //如果没有找到目标键，返回一个空字符串
     return std::string("");
 }
 
 
 std::string SSTable::get_fromdisk(uint64_t key) const {
-    //将 dir_path、level 和 id 拼接成 SST 文件的完整路径
-    std::string sstFilename = dir_path + "/" + std::to_string(level) + "-" + std::to_string(id) + ".sst";
-    char buf[64] = {0};
+    std::string sstFilename = getSSTFilename();
     int fd = open(sstFilename.c_str(), O_RDWR, 0644);
+    if (fd == -1) {
+        throw std::runtime_error("Failed to open file: " + sstFilename);
+    }
+
+    char buf[HEADERSIZE] = {0};
     utils::read_file(fd, 0, HEADERSIZE, buf);
-    //从缓冲区中解析出键值对的数量 num_kv ,前面的时间戳有8位
-    uint64_t num_kv = *(uint64_t * )(buf + 8);
-    //使用 lseek 函数将文件指针移动到键值对数据区域的起始位置。这个位置是布隆过滤器大小加上header的大小（32 字节）
+    uint64_t num_kv = *(uint64_t *)(buf + 8);
+
     lseek(fd, bloomfilter->getM() + 32, SEEK_SET);
-    uint64_t now_key;
-    uint64_t offset;
-    uint64_t valueLen;
-    //循环 head.num_kv 次，每次读取 20 个字节到缓冲区 buf 中，然后将 buf 中的内容分别赋值给 key、offset、valueLen。
-    for (int i = 0; i < head.num_kv; i++) {
-        utils::read_file(fd, -1, 20, buf);
-        now_key = *(uint64_t *) buf;
-        offset = *(uint64_t * )(buf + 8);
-        valueLen = *(uint32_t * )(buf + 16);
-        if (now_key == key) {
-            //如果找到目标键 key，使用 offset 和 valueLen 读取对应的值
-            close(fd);
-            if (valueLen) {
-                char buf[VLOGPADDING + valueLen + 5] = {0};
-                utils::read_file(vlog_path, offset, VLOGPADDING + valueLen, buf);
-                return std::string(buf + VLOGPADDING);
-            }
-                //如果 size 为零，说明值已被删除
-            else {
-                return std::string("~DELETED~");
-            }
+
+    off_t offset;
+    size_t valueLen;
+    if (findKeyInDisk(fd, key, offset, valueLen)) {
+        close(fd);
+        if (valueLen) {
+            return readValueFromVlog(offset, valueLen);
+        } else {
+            return std::string("~DELETED~");
         }
     }
+
     close(fd);
-    //如果没有找到目标键，返回一个空字符串
     return std::string("");
 }
 
 
 uint64_t SSTable::get_offset(uint64_t key) const {
-    typename std::vector<uint64_t>::const_iterator iter = std::lower_bound(keys.begin(), keys.end(), key);
-    if (iter != keys.end() && *iter == key) {
-        int index = int(iter - keys.begin());
-        if (!valueLens[index]) {
+    int index = getKeyIndex(key);
+    if (index != -1) {
+        if (isKeyDeleted(index)) {
             return 2;
-        }
-            //如果不为零，返回对应的偏移量 offsets[index]
-        else {
+        } else {
             return offsets[index];
         }
     }
@@ -145,36 +108,23 @@ uint64_t SSTable::get_offset(uint64_t key) const {
 }
 
 
-std::vector <std::pair<uint64_t, std::string>> SSTable::scan(uint64_t key1, uint64_t key2) {
-    //初始化一个空的结果向量 list
-    std::vector <std::pair<uint64_t, std::string>> list;
-    //如果 key1 大于 key2，返回空的结果向量
+
+std::vector<std::pair<uint64_t, std::string>> SSTable::scan(uint64_t key1, uint64_t key2) {
+    std::vector<std::pair<uint64_t, std::string>> list;
     if (key1 > key2) {
         return list;
     }
-    typename std::vector<uint64_t>::iterator iter1 = std::lower_bound(keys.begin(), keys.end(), key1);
-    typename std::vector<uint64_t>::iterator iter2 = std::lower_bound(keys.begin(), keys.end(), key2);
-    //如果 iter2 指向的元素等于 key2，将 iter2 向后移动一个位置，以确保范围是 [key1, key2]
+
+    auto iter1 = findKey(key1);
+    auto iter2 = findKey(key2);
     if (iter2 != keys.end() && *iter2 == key2) {
         iter2++;
     }
-    //计算 iter1 和 iter2 在 keys 向量中的索引 index1 和 index2
+
     int index1 = int(iter1 - keys.begin());
     int index2 = int(iter2 - keys.begin());
-    int fd = open(vlog_path.c_str(), O_RDWR, 0644);
-    for (int i = index1; i < index2; i++) {
-        off_t offset = offsets[i];
-        size_t size = valueLens[i];
-        if (size) {
-            char buf[VLOGPADDING + size + 5] = {0};
-            utils::read_file(fd, offset, size + VLOGPADDING, buf);
-            list.push_back(std::make_pair(keys[i], std::string(buf + VLOGPADDING)));
-        } else {
-            list.push_back(std::make_pair(keys[i], std::string("~DELETED~")));
-        }
-    }
-    close(fd);
-    return list;
+
+    return readRangeFromVlog(index1, index2);
 }
 
 
@@ -189,38 +139,33 @@ void SSTable::write_disk() const {
 
 
 void SSTable::delete_disk() const {
-    std::string sstFilename = dir_path + "/" + std::to_string(level) + "-" + std::to_string(id) + ".sst";
-    assert(utils::fileExists(sstFilename));
-    utils::rmfile(sstFilename);
+    std::string sstFilename = getSSTFilename();
+    assertFileExists(sstFilename);
+    removeFile(sstFilename);
 }
 
 
 void SSTable::set_id(int new_id) {
-    std::string old_sst = dir_path + "/" + std::to_string(level) + "-" + std::to_string(id) + ".sst";
-    std::string new_sst = dir_path + "/" + std::to_string(level) + "-" + std::to_string(new_id) + ".sst";
+    std::string old_sst = getSSTFilename();
+    std::string new_sst = getSSTFilename(new_id);
     id = new_id;
-    assert(utils::fileExists(old_sst));
-    std::rename(old_sst.c_str(), new_sst.c_str());
+    assertFileExists(old_sst);
+    renameFile(old_sst, new_sst);
 }
 
 
 void SSTable::write_sst() const {
-    std::string sstFilename =
-            dir_path + std::string("/") + std::to_string(level) + std::string("-") + std::to_string(id) +
-            std::string(".sst");
-    char buf[64] = {0};
-    *(uint64_t *) buf = head.stamp;
-    *(uint64_t * )(buf + 8) = head.num_kv;
-    *(uint64_t * )(buf + 16) = head.min_key;
-    *(uint64_t * )(buf + 24) = head.max_key;
-    utils::write_file(sstFilename, -1, 32, buf);
-    utils::write_file(sstFilename, -1, bloomfilter->getM(), bloomfilter->getSet());
-    for (int i = 0; i < keys.size(); i++) {
-        *(uint64_t *) buf = keys[i];
-        *(uint64_t * )(buf + 8) = offsets[i];
-        *(uint32_t * )(buf + 16) = valueLens[i];
-        utils::write_file(sstFilename, -1, 20, buf);
+    std::string sstFilename = getSSTFilename();
+    int fd = open(sstFilename.c_str(), O_RDWR | O_CREAT, 0644);
+    if (fd == -1) {
+        throw std::runtime_error("Failed to open file: " + sstFilename);
     }
+
+    writeHeader(sstFilename);
+    writeBloomFilter(sstFilename);
+    writeKeyValuePairs(sstFilename);
+
+    close(fd);
 }
 
 

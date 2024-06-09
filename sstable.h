@@ -35,6 +35,24 @@ private:
     std::string vlog_path;//vlog 文件所在的目录路径
 
     void write_sst() const;//将 SSTable 写入磁盘
+    void readHeader(int fd);
+    void initializeBloomFilter(int fd, uint64_t bloomSize);
+    void readKeyValuePairs(int fd);
+    std::vector<uint64_t>::const_iterator findKey(uint64_t key) const;
+    std::string readValueFromVlog(off_t offset, size_t size) const;
+    std::string getSSTFilename() const;
+    std::string getSSTFilename(int id) const;
+    bool findKeyInDisk(int fd, uint64_t key, off_t& offset, size_t& valueLen) const;
+    int getKeyIndex(uint64_t key) const;
+    bool isKeyDeleted(int index) const;
+    std::vector<std::pair<uint64_t, std::string>> readRangeFromVlog(int index1, int index2) const;
+    void writeHeader(std::string sstFilename) const;
+    void writeBloomFilter(std::string sstFilename) const;
+    void writeKeyValuePairs(std::string fd) const;
+    void assertFileExists(const std::string& filename) const;
+    void removeFile(const std::string& filename) const;
+    void renameFile(const std::string& oldFilename, const std::string& newFilename) const;
+
 
 public:
     //初始化 SSTable 的各个成员变量

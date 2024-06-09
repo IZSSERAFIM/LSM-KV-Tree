@@ -1,5 +1,5 @@
 #include "memtable.h"
-#include "memtable.hpp"
+#include "memtable_utils.hpp"
 
 MemTable::MemTable(double p, uint64_t bloomSize) {
     this->p = p;
