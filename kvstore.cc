@@ -204,35 +204,34 @@ bool KVStore::del(uint64_t key)
     return false;
 }
 
+void KVStore::deleteAllSSTables() {
+    for(int i = 0; i < layers.size(); i ++) {
+        for(int j = layers[i].size() - 1; j >= 0; j --) {
+            layers[i][j] -> delete_disk();
+            delete layers[i][j];
+            layers[i].pop_back();
+        }
+    }
+}
+
+void KVStore::deleteAllFilesInDir() {
+    std::vector <std::string> files;
+    utils::scanDir(dir_path, files);
+    for(int i = 0; i < files.size(); i ++) {
+        utils::rmfile(files[i]);
+    }
+}
+
 /**
  * This resets the kvstore. All key-value pairs should be removed,
  * including memtable and all sstables files.
  */
 void KVStore::reset()
 {
-    //删除所有 SSTable 文件
-    for(int i = 0; i < layers.size(); i ++) {
-        for(int j = layers[i].size() - 1; j >= 0; j --) {
-            //删除 SSTable 文件
-            layers[i][j] -> delete_disk();
-            //释放 SSTable 对象
-            delete layers[i][j];
-            //从层中移除 SSTable
-            layers[i].pop_back();
-        }
-    }
-    //删除 memTable
+    deleteAllSSTables();
     delete memTable;
-    //删除 vlog 文件
     utils::rmfile(vlog_path);
-    //删除存储目录中的所有文件
-    std::vector <std::string> files;
-    //获取存储目录中的所有文件名，并存储到 files 向量中
-    utils::scanDir(dir_path, files);
-    for(int i = 0; i < files.size(); i ++) {
-        utils::rmfile(files[i]);
-    }
-    //重新初始化 memTable
+    deleteAllFilesInDir();
     memTable = new MemTable (0.5, bloomSize);
 }
 

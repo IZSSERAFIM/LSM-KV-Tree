@@ -25,6 +25,8 @@ private:
     void doCompaction();
     std::string getValueFromMemTable(uint64_t key);
     std::string getValueFromSSTable(uint64_t key);
+    void deleteAllSSTables();
+    void deleteAllFilesInDir();
     void compaction(int level);
 
 public:
