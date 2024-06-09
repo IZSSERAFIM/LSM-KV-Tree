@@ -3,7 +3,7 @@
 #include <fcntl.h>
 #include <queue>
 #include <cassert>
-
+#include "kvstore_utils.hpp"
 
 
 KVStore::KVStore(const std::string &dir, const std::string &vlog) : KVStoreAPI(dir, vlog) {
