@@ -1,8 +1,8 @@
 #pragma once
 
 #include "kvstore_api.h"
-#include "memtable.hpp"
-#include "sstable.hpp"
+#include "memtable.h"
+#include "sstable.h"
 #include "config.h"
 
 
@@ -14,8 +14,8 @@ private:
     uint64_t tail;//尾部
     uint64_t bloomSize;//布隆过滤器大小
     int test_type;
-    MemTable<key_type, value_type> *memTable;
-    std::vector<std::vector<SSTable<key_type, value_type>*>> layers;//存储每一层的 SSTable
+    MemTable  *memTable;
+    std::vector<std::vector<SSTable *>> layers;//存储每一层的 SSTable
     std::string dir_path;
     std::string vlog_path;
 

@@ -26,17 +26,15 @@
 
 #define MINKEY 0x7fffffff
 
-using key_type = uint64_t;
-using value_type = std::string;
 
 struct kv {
-    std::pair<key_type, value_type> kv_pair;//键值对
+    std::pair <uint64_t, std::string> kv_pair;//键值对
     uint64_t stamp;//时间戳
     int i;//索引
 };
 
 struct kv_info {
-    key_type key;//键
+    uint64_t key;//键
     uint64_t valueLen;//值的长度
     uint64_t stamp;//时间戳
     off_t offset;//偏移量

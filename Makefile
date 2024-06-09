@@ -2,7 +2,7 @@
 LINK.o = $(LINK.cc)
 CXXFLAGS = -std=c++14 -Wall -g
 
-init = memtable.o
+init = memtable.o sstable.o
 
 all: correctness persistence
 
@@ -11,6 +11,6 @@ persistence: kvstore.o persistence.o $(init)
 
 clean:
 	-rm -f correctness persistence *.o
-
-cleandata:
 	-rm -f ./data/*.sst
+	-rm -f ./data/vlog
+
