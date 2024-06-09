@@ -168,21 +168,21 @@ std::string KVStore::getValueFromSSTable(uint64_t key) {
  * An empty string indicates not found.
  */
 std::string KVStore::get(uint64_t key) {
-    //从内存中的跳表 memTable 获取值
+    // 从内存中的跳表 memTable 获取值
     std::string val = memTable->get(key);
     if (val == "~DELETED~") {
         return "";
     } else if (val != "") {
         return val;
     }
-    //从 SSTable 获取值
-    for (int i = 0; i < layers.size(); i++) {
-        //从后向前遍历每层 SSTable
-        for (int j = layers[i].size() - 1; j >= 0; j--) {
-            //如果测试模式为 1 或 2，或者布隆过滤器判断键可能存在于 SSTable 中，则继续获取值
-            if (layers[i][j]->query(key)) {
-                //从 SSTable 中获取值
-                val = layers[i][j]->get(key);
+    // 从 SSTable 获取值
+    for (auto &layer : layers) {
+        // 从后向前遍历每层 SSTable
+        for (auto it = layer.rbegin(); it != layer.rend(); ++it) {
+            // 如果测试模式为 1 或 2，或者布隆过滤器判断键可能存在于 SSTable 中，则继续获取值
+            if ((*it)->query(key)) {
+                // 从 SSTable 中获取值
+                val = (*it)->get(key);
                 if (val == "~DELETED~") {
                     return "";
                 } else if (val != "") {
@@ -193,6 +193,7 @@ std::string KVStore::get(uint64_t key) {
     }
     return "";
 }
+
 
 /**
  * Delete the given key-value pair if it exists.
