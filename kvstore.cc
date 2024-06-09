@@ -236,64 +236,72 @@ void KVStore::reset() {
     memTable = new MemTable (0.5, bloomSize);
 }
 
+void KVStore::getPairsFromMemTable( uint64_t key1, uint64_t key2, std::vector<std::vector<std::pair<uint64_t, std::string> > > & scanRes, std::vector<int> & it, std::priority_queue<kv> & kvs )
+{
+scanRes.push_back( memTable->scan( key1, key2 ) );
+it.push_back( 0 );
+if ( it.back() != scanRes.back().size() )
+{
+kvs.push( kv { scanRes.back()[0], stamp, 0 } );
+it.back()++;
+}
+}
+
+
+void KVStore::getPairsFromSSTable( uint64_t key1, uint64_t key2, std::vector<std::vector<std::pair<uint64_t, std::string> > > & scanRes, std::vector<int> & it, std::priority_queue<kv> & kvs )
+{
+for ( int i = 0, sstSum = 0; i < layers.size(); sstSum += layers[i].size(), i++ )
+{
+for ( int j = 0; j < layers[i].size(); j++ )
+{
+scanRes.push_back( layers[i][j]->scan( key1, key2 ) );
+it.push_back( 0 );
+if ( it.back() != scanRes.back().size() )
+{
+kvs.push( kv { scanRes.back()[0], layers[i][j]->getStamp(), sstSum + j + 1 } );
+it.back()++;
+}
+}
+}
+}
+
+
+void KVStore::removeDeletedPairs( std::list<std::pair<uint64_t, std::string> > & list, std::vector<std::vector<std::pair<uint64_t, std::string> > > & scanRes, std::vector<int> & it, std::priority_queue<kv> & kvs )
+{
+uint64_t last_delete = HEAD;
+while ( !kvs.empty() )
+{
+kv min_kv = kvs.top();
+kvs.pop();
+if ( last_delete != min_kv.kv_pair.first )
+{
+if ( min_kv.kv_pair.second == "~DELETED~" )
+{
+last_delete = min_kv.kv_pair.first;
+}else  {
+list.push_back( min_kv.kv_pair );
+}
+}
+if ( it[min_kv.i] != scanRes[min_kv.i].size() )
+{
+kvs.push( kv { scanRes[min_kv.i][it[min_kv.i]], min_kv.stamp, min_kv.i } );
+it[min_kv.i]++;
+}
+}
+}
+
 /**
  * Return a list including all the key-value pair between key1 and key2.
  * keys in the list should be in an ascending order.
  * An empty string indicates not found.
  */
 void KVStore::scan(uint64_t key1, uint64_t key2, std::list <std::pair<uint64_t, std::string>> &list) {
-    //定义一个优先队列 kvs，用于存储 kv 对象
-    std::priority_queue <kv> kvs;
-    //定义一个向量 scanRes，用于存储各层次的扫描结果
-    std::vector < std::vector < std::pair < uint64_t, std::string>>> scanRes;
-    //定义一个迭代器 it
+    std::priority_queue<kv> kvs;
+    std::vector<std::vector<std::pair<uint64_t, std::string>>> scanRes;
     std::vector<int> it;
-    //先在 memTable 中查找
-    //将 memTable 中指定范围的键值对添加到 scanRes 中
-    scanRes.push_back(memTable->scan(key1, key2));
-    //初始化迭代器
-    it.push_back(0);
-    if (it.back() != scanRes.back().size()) {
-        //将第一个键值对及其时间戳和索引添加到优先队列
-        kvs.push(kv{scanRes.back()[0], stamp, 0});
-        //更新迭代器
-        it.back()++;
-    }
-    //再在 SSTable 中查找
-    //遍历 SSTable 所有层
-    for (int i = 0, sstSum = 0; i < layers.size(); sstSum += layers[i].size(), i++) {
-        for (int j = 0; j < layers[i].size(); j++) {
-            scanRes.push_back(layers[i][j]->scan(key1, key2));
-            //初始化迭代器
-            it.push_back(0);
-            if (it.back() != scanRes.back().size()) {
-                kvs.push(kv{scanRes.back()[0], layers[i][j]->getStamp(), sstSum + j + 1});
-                it.back()++;
-            }
-        }
-    }
-    //剔除已经删除的kv
-    //初始化删除标记
-    uint64_t last_delete = HEAD;
-    while (!kvs.empty()) {
-        //从优先队列中取出最小的键值对
-        kv min_kv = kvs.top();
-        kvs.pop();
-        //如果当前键不等于上一个被删除的键
-        if (last_delete != min_kv.kv_pair.first) {
-            if (min_kv.kv_pair.second == "~DELETED~") {
-                //如果值为删除标记, 更新删除标记
-                last_delete = min_kv.kv_pair.first;
-            } else {
-                list.push_back(min_kv.kv_pair);
-            }
-        }
-        //
-        if (it[min_kv.i] != scanRes[min_kv.i].size()) {
-            kvs.push(kv{scanRes[min_kv.i][it[min_kv.i]], min_kv.stamp, min_kv.i});
-            it[min_kv.i]++;
-        }
-    }
+    getPairsFromMemTable(key1, key2, scanRes, it, kvs);
+    getPairsFromSSTable(key1, key2, scanRes, it, kvs);
+    removeDeletedPairs(list, scanRes, it, kvs);
 }
 
 /**
