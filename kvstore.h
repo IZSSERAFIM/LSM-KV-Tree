@@ -27,6 +27,9 @@ private:
     std::string getValueFromSSTable(uint64_t key);
     void deleteAllSSTables();
     void deleteAllFilesInDir();
+    void getPairsFromMemTable(uint64_t key1, uint64_t key2, std::vector<std::vector<std::pair<uint64_t, std::string>>>& scanRes, std::vector<int>& it, std::priority_queue<kv>& kvs);
+    void getPairsFromSSTable(uint64_t key1, uint64_t key2, std::vector<std::vector<std::pair<uint64_t, std::string>>>& scanRes, std::vector<int>& it, std::priority_queue<kv>& kvs);
+    void removeDeletedPairs(std::list<std::pair<uint64_t, std::string>>& list, std::vector<std::vector<std::pair<uint64_t, std::string>>>& scanRes, std::vector<int>& it, std::priority_queue<kv>& kvs);
     void compaction(int level);
 
 public:
