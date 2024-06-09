@@ -534,32 +534,6 @@ void KVStore::updateSSTableIndices(int level) {
     }
 }
 
-void KVStore::createNewSSTables(int level, std::vector <kv_info> &kv_list) {
-    int max_kvnum = (SSTABLESIZE - bloomSize - HEADERSIZE) / 20;
-    for (int i = 0; i < kv_list.size(); i += max_kvnum) {
-        uint64_t max_key = 0;
-        uint64_t min_key = MINKEY;
-        uint64_t new_step = 0;
-        uint64_t kv_num = std::min(max_kvnum, (int) kv_list.size() - i);
-        std::vector <uint64_t> keys;
-        std::vector <uint64_t> offsets, valueLens;
-        bloomFilter *bloom_p = new bloomFilter(bloomSize, 3);
-        for (int j = i; j < std::min(i + max_kvnum, (int) kv_list.size()); j++) {
-            max_key = std::max(max_key, kv_list[j].key);
-            min_key = std::min(min_key, kv_list[j].key);
-            new_step = std::max(new_step, kv_list[j].stamp);
-            keys.push_back(kv_list[j].key);
-            offsets.push_back(kv_list[j].offset);
-            valueLens.push_back(kv_list[j].valueLen);
-            bloom_p->insert(kv_list[j].key);
-        }
-        SSTable *sst = new SSTable({new_step, kv_num, max_key, min_key}, level + 1, layers[level + 1].size(), bloom_p,
-                                   keys, offsets, valueLens, dir_path, vlog_path);
-        sst->write_disk();
-        layers[level + 1].push_back(sst);
-    }
-}
-
 void KVStore::compaction(int level) {
     uint64_t min_key = MINKEY;
     uint64_t max_key = 0;
