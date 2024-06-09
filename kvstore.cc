@@ -110,6 +110,20 @@ KVStore::~KVStore() {
     delete memTable;
 }
 
+void KVStore::checkAndConvertMemTable() {
+    if(memTable -> size() >= SSTABLESIZE) {
+        layers[0].push_back(memTable -> convertSSTable(layers[0].size(), stamp ++, dir_path, vlog_path));
+        delete memTable;
+        memTable = new MemTable (0.5, bloomSize);
+    }
+}
+
+void KVStore::doCompaction() {
+    for(int i = 0; i < layers.size() && layers[i].size() > (1 << i + 2); i ++) {
+        compaction(i);
+    }
+}
+
 /**
  * Insert/Update the key-value pair.
  * No return values for simplicity.
@@ -129,6 +143,35 @@ void KVStore::put(uint64_t key, const std::string &s) {
     }
     //将键值对插入 memTable
     memTable->put(key, s);
+}
+
+std::string KVStore::getValueFromMemTable(uint64_t key) {
+    std::string val = memTable -> get(key);
+    if (val == "~DELETED~") {
+        return "";
+    }
+    else if(val != "") {
+        return val;
+    }
+    return "";
+}
+
+std::string KVStore::getValueFromSSTable(uint64_t key) {
+    std::string val = "";
+    for(int i = 0; i < layers.size(); i ++) {
+        for (int j = layers[i].size() - 1; j >= 0; j--) {
+            if (layers[i][j]->query(key)) {
+                val = layers[i][j]->get(key);
+                if (val == "~DELETED~") {
+                    return "";
+                }
+                else if (val != "") {
+                    return val;
+                }
+            }
+        }
+    }
+    return "";
 }
 
 /**
