@@ -452,37 +452,41 @@ void KVStore::gc(uint64_t chunk_size) {
     tail = read_len + tail;
 }
 
-void KVStore::compaction(int level) {
-    uint64_t min_key = MINKEY;
-    uint64_t max_key = 0;
-    //确定压缩的 SSTable 数量，如果是第 0 层，压缩所有 SSTable；否则，压缩一半的 SSTable
+int KVStore::determineCompactSize(int level) {
     int compact_size = level ? layers[level].size() / 2 : layers[level].size();
     uint64_t max_stamp = layers[level][compact_size - 1]->getStamp();
-    //确保压缩的 SSTable 数量包含所有时间戳小于等于 max_stamp 的 SSTable
     while (compact_size < layers[level].size() && layers[level][compact_size]->getStamp() <= max_stamp) {
         compact_size++;
     }
-    //遍历所有需要压缩的 SSTable，更新 min_key 和 max_key
+    return compact_size;
+}
+
+void KVStore::updateMinMaxKeys(int compact_size, uint64_t &min_key, uint64_t &max_key, int level) {
     for (int i = 0; i < compact_size; i++) {
         max_key = std::max(max_key, layers[level][i]->get_maxkey());
         min_key = std::min(min_key, layers[level][i]->get_minkey());
     }
-    //准备下一层
+}
+
+void KVStore::prepareNextLayer(int level) {
     if (level + 1 == layers.size()) {
         layers.push_back(std::vector<SSTable *>());
     }
-    //下一层 SSTable 的索引
-    std::vector<int> index;
-    std::vector<int> it;
-    std::priority_queue <kv_info> kvs;
-    //遍历下一层的所有 SSTable，收集键范围与当前层压缩范围重叠的 SSTable，将这些 SSTable 的索引添加到 index 中，并初始化迭代器
+}
+
+void KVStore::collectOverlappingSSTables(int level, uint64_t min_key, uint64_t max_key, std::vector<int> &index,
+                                         std::vector<int> &it) {
     for (int i = 0; i < layers[level + 1].size(); i++) {
         if (layers[level + 1][i]->get_minkey() <= max_key && layers[level + 1][i]->get_maxkey() >= min_key) {
             index.push_back(i);
             it.push_back(0);
         }
     }
-    //将下一层的键值对添加到优先队列 kvs 中
+}
+
+void
+KVStore::addKVToPriorityQueue(int level, int compact_size, std::vector<int> &it, std::priority_queue <kv_info> &kvs,
+                              std::vector<int> &index) {
     for (int i = index.size() - 1; i >= 0; i--) {
         if (it[i] != layers[level + 1][index[i]]->get_numkv()) {
             SSTable *sst = layers[level + 1][index[i]];
@@ -490,7 +494,6 @@ void KVStore::compaction(int level) {
             it[i]++;
         }
     }
-    //将当前层的键值对添加到优先队列 kvs 中
     for (int i = 0; i < compact_size; i++) {
         it.push_back(0);
         if (it.back() != layers[level][i]->get_numkv()) {
@@ -500,86 +503,76 @@ void KVStore::compaction(int level) {
             it.back()++;
         }
     }
+}
+
+std::vector <kv_info>
+KVStore::collectKVList(std::vector<int> &it, std::priority_queue <kv_info> &kvs, int level, std::vector<int> &index,
+                       int compact_size) {
     std::vector <kv_info> kv_list;
     while (!kvs.empty()) {
-        //从优先队列中取出最小的键值对
         kv_info min_kv = kvs.top();
         kvs.pop();
-        //检查是否为重复键
         if (kv_list.empty() || min_kv.key != kv_list.back().key) {
-            //如果不是重复键，将键值对添加到 kv_list 中
             kv_list.push_back(min_kv);
         } else {
-            //如果是重复键，确保时间戳递减
             assert(kv_list.back().stamp >= min_kv.stamp);
         }
-        //更新优先队列kvs
-        //如果是当前层的键值对
         if (min_kv.i >= index.size()) {
             int i = min_kv.i - index.size();
-            //检查是否有更多键值对
             assert(layers[level][i]->get_numkv() == layers[level][i]->get_keys().size());
-            //如果有更多键值对，将键值对添加到优先队列 kvs 中
             if (it[min_kv.i] != layers[level][i]->get_numkv()) {
                 SSTable *sst = layers[level][i];
                 kvs.push(kv_info{sst->get_keys()[it[min_kv.i]], sst->get_valueLens()[it[min_kv.i]], min_kv.stamp,
                                  sst->get_offsets()[it[min_kv.i]], min_kv.i});
                 it[min_kv.i]++;
             }
-        }
-            //如果是下一层的键值对
-        else if (it[min_kv.i] != layers[level + 1][index[min_kv.i]]->get_numkv()) {
-            //获取对应的 SSTable，将下一个键值对添加到优先队列 kvs 中
+        } else if (it[min_kv.i] != layers[level + 1][index[min_kv.i]]->get_numkv()) {
             SSTable *sst = layers[level + 1][index[min_kv.i]];
             kvs.push(kv_info{sst->get_keys()[it[min_kv.i]], sst->get_valueLens()[it[min_kv.i]], min_kv.stamp,
                              sst->get_offsets()[it[min_kv.i]], min_kv.i});
             it[min_kv.i]++;
         }
     }
-    //删除下一层的旧 SSTable
+    return kv_list;
+}
+
+void KVStore::deleteOldSSTables(int level, std::vector<int> &index, int compact_size) {
     for (int i = index.size() - 1; i >= 0; i--) {
         std::vector<SSTable *>::iterator iter = layers[level + 1].begin() + index[i];
         layers[level + 1][index[i]]->delete_disk();
         delete layers[level + 1][index[i]];
         layers[level + 1].erase(iter);
     }
-    //删除当前层的旧 SSTable
     for (int i = compact_size - 1; i >= 0; i--) {
         std::vector<SSTable *>::iterator iter = layers[level].begin() + i;
         layers[level][i]->delete_disk();
         delete layers[level][i];
         layers[level].erase(iter);
     }
-    //更新当前层的 SSTable 索引
+}
+
+void KVStore::updateSSTableIndices(int level) {
     for (int i = 0; i < layers[level].size(); i++) {
         layers[level][i]->set_id(i);
     }
-    //更新下一层的 SSTable 索引
     for (int i = 0; i < layers[level + 1].size(); i++) {
         layers[level + 1][i]->set_id(i);
     }
-    //计算每个 SSTable 的最大键值对数量
-    int max_kvnum = (SSTABLESIZE - bloomSize - HEADERSIZE) / 20;
-    for (int i = 0; i < kv_list.size(); i += max_kvnum) {
-        uint64_t max_key = 0;
-        uint64_t min_key = MINKEY;
-        uint64_t new_step = 0;
-        uint64_t kv_num = std::min(max_kvnum, (int) kv_list.size() - i);
-        std::vector <uint64_t> keys;
-        std::vector <uint64_t> offsets, valueLens;
-        bloomFilter *bloom_p = new bloomFilter(bloomSize, 3);
-        for (int j = i; j < std::min(i + max_kvnum, (int) kv_list.size()); j++) {
-            max_key = std::max(max_key, kv_list[j].key);
-            min_key = std::min(min_key, kv_list[j].key);
-            new_step = std::max(new_step, kv_list[j].stamp);
-            keys.push_back(kv_list[j].key);
-            offsets.push_back(kv_list[j].offset);
-            valueLens.push_back(kv_list[j].valueLen);
-            bloom_p->insert(kv_list[j].key);
-        }
-        SSTable *sst = new SSTable({new_step, kv_num, max_key, min_key}, level + 1, layers[level + 1].size(), bloom_p,
-                                   keys, offsets, valueLens, dir_path, vlog_path);
-        sst->write_disk();
-        layers[level + 1].push_back(sst);
-    }
+}
+
+void KVStore::compaction(int level) {
+    uint64_t min_key = MINKEY;
+    uint64_t max_key = 0;
+    int compact_size = determineCompactSize(level);
+    updateMinMaxKeys(compact_size, min_key, max_key, level);
+    prepareNextLayer(level);
+    std::vector<int> index;
+    std::vector<int> it;
+    collectOverlappingSSTables(level, min_key, max_key, index, it);
+    std::priority_queue <kv_info> kvs;
+    addKVToPriorityQueue(level, compact_size, it, kvs, index);
+    std::vector <kv_info> kv_list = collectKVList(it, kvs, level, index, compact_size);
+    deleteOldSSTables(level, index, compact_size);
+    updateSSTableIndices(level);
+    createNewSSTables(level, kv_list);
 }
