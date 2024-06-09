@@ -289,3 +289,114 @@ size();
 
 }
 }
+
+int KVStore::determineCompactSize(int level, uint64_t& min_key, uint64_t& max_key, uint64_t& max_stamp) {
+    min_key = MINKEY;
+    max_key = 0;
+    int compact_size = level ? layers[level].size() / 2 : layers[level].size();
+    max_stamp = layers[level][compact_size - 1]->getStamp();
+    while (compact_size < layers[level].size() && layers[level][compact_size]->getStamp() <= max_stamp) {
+        compact_size++;
+    }
+    return compact_size;
+}
+
+void KVStore::prepareNextLevel(int level) {
+    if (level + 1 == layers.size()) {
+        layers.push_back(std::vector<SSTable *>());
+    }
+}
+
+//void KVStore::collectOverlappingSSTables(int level, uint64_t min_key, uint64_t max_key, std::vector<int>& index, std::vector<int>& it) {
+//    for (int i = 0; i < layers[level + 1].size(); i++) {
+//        if (layers[level + 1][i]->get_minkey() <= max_key && layers[level + 1][i]->get_maxkey() >= min_key) {
+//            index.push_back(i);
+//            it.push_back(0);
+//        }
+//    }
+//}
+
+void KVStore::mergeAndWriteSSTables(int level, int compact_size, std::vector<int>& index, std::vector<int>& it) {
+    std::priority_queue <kv_info> kvs;
+    for (int i = index.size() - 1; i >= 0; i--) {
+        if (it[i] != layers[level + 1][index[i]]->get_numkv()) {
+            SSTable *sst = layers[level + 1][index[i]];
+            kvs.push(kv_info{sst->get_keys()[0], sst->get_valueLens()[0], sst->getStamp(), sst->get_offsets()[0], i});
+            it[i]++;
+        }
+    }
+    for (int i = 0; i < compact_size; i++) {
+        it.push_back(0);
+        if (it.back() != layers[level][i]->get_numkv()) {
+            SSTable *sst = layers[level][i];
+            kvs.push(kv_info{sst->get_keys()[0], sst->get_valueLens()[0], sst->getStamp(), sst->get_offsets()[0],
+                             i + index.size()});
+            it.back()++;
+        }
+    }
+    std::vector <kv_info> kv_list;
+    while (!kvs.empty()) {
+        kv_info min_kv = kvs.top();
+        kvs.pop();
+        if (kv_list.empty() || min_kv.key != kv_list.back().key) {
+            kv_list.push_back(min_kv);
+        } else {
+            assert(kv_list.back().stamp >= min_kv.stamp);
+        }
+        if (min_kv.i >= index.size()) {
+            int i = min_kv.i - index.size();
+            if (it[min_kv.i] != layers[level][i]->get_numkv()) {
+                SSTable *sst = layers[level][i];
+                kvs.push(kv_info{sst->get_keys()[it[min_kv.i]], sst->get_valueLens()[it[min_kv.i]], min_kv.stamp,
+                                 sst->get_offsets()[it[min_kv.i]], min_kv.i});
+                it[min_kv.i]++;
+            }
+        } else if (it[min_kv.i] != layers[level + 1][index[min_kv.i]]->get_numkv()) {
+            SSTable *sst = layers[level + 1][index[min_kv.i]];
+            kvs.push(kv_info{sst->get_keys()[it[min_kv.i]], sst->get_valueLens()[it[min_kv.i]], min_kv.stamp,
+                             sst->get_offsets()[it[min_kv.i]], min_kv.i});
+            it[min_kv.i]++;
+        }
+    }
+    for (int i = index.size() - 1; i >= 0; i--) {
+        std::vector<SSTable *>::iterator iter = layers[level + 1].begin() + index[i];
+        layers[level + 1][index[i]]->delete_disk();
+        delete layers[level + 1][index[i]];
+        layers[level + 1].erase(iter);
+    }
+    for (int i = compact_size - 1; i >= 0; i--) {
+        std::vector<SSTable *>::iterator iter = layers[level].begin() + i;
+        layers[level][i]->delete_disk();
+        delete layers[level][i];
+        layers[level].erase(iter);
+    }
+    for (int i = 0; i < layers[level].size(); i++) {
+        layers[level][i]->set_id(i);
+    }
+    for (int i = 0; i < layers[level + 1].size(); i++) {
+        layers[level + 1][i]->set_id(i);
+    }
+    int max_kvnum = (SSTABLESIZE - bloomSize - HEADERSIZE) / 20;
+    for (int i = 0; i < kv_list.size(); i += max_kvnum) {
+        uint64_t max_key = 0;
+        uint64_t min_key = MINKEY;
+        uint64_t new_step = 0;
+        uint64_t kv_num = std::min(max_kvnum, (int) kv_list.size() - i);
+        std::vector <uint64_t> keys;
+        std::vector <uint64_t> offsets, valueLens;
+        bloomFilter *bloom_p = new bloomFilter(bloomSize, 3);
+        for (int j = i; j < std::min(i + max_kvnum, (int) kv_list.size()); j++) {
+            max_key = std::max(max_key, kv_list[j].key);
+            min_key = std::min(min_key, kv_list[j].key);
+            new_step = std::max(new_step, kv_list[j].stamp);
+            keys.push_back(kv_list[j].key);
+            offsets.push_back(kv_list[j].offset);
+            valueLens.push_back(kv_list[j].valueLen);
+            bloom_p->insert(kv_list[j].key);
+        }
+        SSTable *sst = new SSTable({new_step, kv_num, max_key, min_key}, level + 1, layers[level + 1].size(), bloom_p,
+                                   keys, offsets, valueLens, dir_path, vlog_path);
+        sst->write_disk();
+        layers[level + 1].push_back(sst);
+    }
+}

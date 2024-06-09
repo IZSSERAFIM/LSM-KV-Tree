@@ -287,18 +287,16 @@ void KVStore::updateSSTableIndices(int level) {
 }
 
 void KVStore::compaction(int level) {
-    uint64_t min_key = MINKEY;
-    uint64_t max_key = 0;
-    int compact_size = determineCompactSize(level);
-    updateMinMaxKeys(compact_size, min_key, max_key, level);
-    prepareNextLayer(level);
+    uint64_t min_key, max_key, max_stamp;
+    int compact_size = determineCompactSize(level, min_key, max_key, max_stamp);
+
+    prepareNextLevel(level);
+
     std::vector<int> index;
     std::vector<int> it;
     collectOverlappingSSTables(level, min_key, max_key, index, it);
-    std::priority_queue <kv_info> kvs;
-    addKVToPriorityQueue(level, compact_size, it, kvs, index);
-    std::vector <kv_info> kv_list = collectKVList(it, kvs, level, index, compact_size);
-    deleteOldSSTables(level, index, compact_size);
-    updateSSTableIndices(level);
-    createNewSSTables(level, kv_list);
+
+    mergeAndWriteSSTables(level, compact_size, index, it);
 }
+
+

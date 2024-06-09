@@ -20,7 +20,7 @@
 
 #define BLOOMSIZE 8192
 
-#define BUFFER_SIZE (1024 * 48 + 5)
+#define BUFFER_SIZE (1024 * 64 + 5)
 
 #define HEAD -0x7ffffff
 

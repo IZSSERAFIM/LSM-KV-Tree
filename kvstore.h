@@ -48,6 +48,11 @@ private:
     void getPairsFromMemTable(uint64_t key1, uint64_t key2, std::vector<std::vector<std::pair<uint64_t, std::string>>>& scanRes, std::vector<int>& it, std::priority_queue<kv>& kvs);
     void getPairsFromSSTable(uint64_t key1, uint64_t key2, std::vector<std::vector<std::pair<uint64_t, std::string>>>& scanRes, std::vector<int>& it, std::priority_queue<kv>& kvs);
 
+    int determineCompactSize(int level, uint64_t& min_key, uint64_t& max_key, uint64_t& max_stamp);
+    void prepareNextLevel(int level);
+//    void collectOverlappingSSTables(int level, uint64_t min_key, uint64_t max_key, std::vector<int>& index, std::vector<int>& it);
+    void mergeAndWriteSSTables(int level, int compact_size, std::vector<int>& index, std::vector<int>& it);
+
 public:
     KVStore(const std::string& dir, const std::string& vlog);
     ~KVStore();
