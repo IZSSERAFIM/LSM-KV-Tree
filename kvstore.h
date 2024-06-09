@@ -21,6 +21,8 @@ private:
     void process_vlog();
     void process_sst(std::vector<std::string>& files, std::priority_queue<sst_info>& sstables);
     void write_sst(std::priority_queue<sst_info>& sstables);
+    void checkAndConvertMemTable();
+    void doCompaction();
     void compaction(int level);
 
 public:

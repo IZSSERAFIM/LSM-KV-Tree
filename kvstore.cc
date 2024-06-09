@@ -89,11 +89,6 @@ void KVStore::write_sst(std::priority_queue<sst_info>& sstables) {
     }
 }
 
-/**
- * Demo consturctor used for test
- * !! cannot persistence !!
- * @param bloomSize bloomFilter size
-*/
 KVStore::KVStore(const std::string &dir, const std::string &vlog) : KVStoreAPI(dir, vlog)
 {
     this->memTable = new MemTable (0.5, BLOOMSIZE);
@@ -123,25 +118,28 @@ KVStore::~KVStore()
     delete memTable;
 }
 
+void KVStore::checkAndConvertMemTable() {
+    if(memTable -> size() >= SSTABLESIZE) {
+        layers[0].push_back(memTable -> convertSSTable(layers[0].size(), stamp ++, dir_path, vlog_path));
+        delete memTable;
+        memTable = new MemTable (0.5, bloomSize);
+    }
+}
+
+void KVStore::doCompaction() {
+    for(int i = 0; i < layers.size() && layers[i].size() > (1 << i + 2); i ++) {
+        compaction(i);
+    }
+}
+
 /**
  * Insert/Update the key-value pair.
  * No return values for simplicity.
  */
 void KVStore::put(uint64_t key, const std::string &s)
 {
-    //检查 memTable 的大小是否超过 SSTABLESIZE
-    if(memTable -> size() >= SSTABLESIZE) {
-        //将 memTable 转换为 SSTable 并添加到第 0 层
-        layers[0].push_back(memTable -> convertSSTable(layers[0].size(), stamp ++, dir_path, vlog_path));
-        delete memTable;
-        //进行compaction, Level n层的文件数量为2^(𝑛+1)
-        for(int i = 0; i < layers.size() && layers[i].size() > (1 << i + 2); i ++) {
-            compaction(i);
-        }
-        //创建一个新的 memTable
-        memTable = new MemTable (0.5, bloomSize);
-    }
-    //将键值对插入 memTable
+    checkAndConvertMemTable();
+    doCompaction();
     memTable -> put(key, s);
 }
 
