@@ -217,6 +217,24 @@ bool KVStore::del(uint64_t key) {
     return false;
 }
 
+void KVStore::deleteAllSSTables() {
+    for(int i = 0; i < layers.size(); i ++) {
+        for(int j = layers[i].size() - 1; j >= 0; j --) {
+            layers[i][j] -> delete_disk();
+            delete layers[i][j];
+            layers[i].pop_back();
+        }
+    }
+}
+
+void KVStore::deleteAllFilesInDir() {
+    std::vector <std::string> files;
+    utils::scanDir(dir_path, files);
+    for(int i = 0; i < files.size(); i ++) {
+        utils::rmfile(files[i]);
+    }
+}
+
 /**
  * This resets the kvstore. All key-value pairs should be removed,
  * including memtable and all sstables files.
