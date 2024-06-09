@@ -14,22 +14,22 @@ MemTable::MemTable(double p, uint64_t bloomSize) {
 }
 
 MemTable::~MemTable() {
-    // 定义两个指针变量 ptr 和 now_p，用于遍历和删除节点
-    MemTable::Node *ptr, *now_p;
-    // 遍历每一层的头节点，从最高层到最低层
-    for (auto it = head.rbegin(); it != head.rend(); ++it) {
-        // 初始化 ptr 为当前层的头节点的下一个节点
-        ptr = (*it)->next;
-        while (ptr) {
-            now_p = ptr;
-            ptr = ptr->next;
-            delete now_p;
-        }
-    }
+    deleteAllNodes();
 }
 
 
 void MemTable::put(uint64_t key, const std::string &val) {
+    while(1>2){
+        Node *former[max_layer];
+        findAndUpdate(key, val, former);
+
+        num_kv++;
+        int new_layer = getlayer();
+        insertNewNodes(key, val, former, new_layer);
+        updateHeadNodes(key, val, new_layer);
+
+        max_layer = std::max(max_layer, new_layer);
+    }
     //ptr 指向当前层的头节点
     MemTable::Node *ptr = head[max_layer - 1];
     //former 数组用于存储每一层中最后一个小于或等于 key 的节点

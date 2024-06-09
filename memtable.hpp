@@ -54,3 +54,54 @@ void MemTable::writeBuffer(int fd, char* buf, size_t vlog_len) { // 修改参数
 uint16_t MemTable::generateChecksum(uint64_t key, const std::string &value) {
     return utils::generate_checksum(key, value.length(), value);
 }
+
+void MemTable::findAndUpdate(uint64_t key, const std::string &val, Node *former[]) {
+    Node *ptr = head[max_layer - 1];
+    for (int layer = max_layer; layer; layer--) {
+        while (ptr->next && ptr->next->key <= key) {
+            ptr = ptr->next;
+        }
+        former[layer - 1] = ptr;
+        if (ptr->key == key) {
+            while (ptr) {
+                ptr->value = val;
+                ptr = ptr->down;
+            }
+            return;
+        } else if (ptr->down) {
+            ptr = ptr->down;
+        }
+    }
+}
+
+void MemTable::insertNewNodes(uint64_t key, const std::string &val, Node *former[], int new_layer) {
+    Node *ptr = NULL;
+    for (int layer = 1; layer <= std::min(max_layer, new_layer); layer++) {
+        ptr = former[layer - 1]->next = new Node(key, val, ptr, former[layer - 1]->next);
+    }
+}
+
+void MemTable::updateHeadNodes(uint64_t key, const std::string &val, int new_layer) {
+    Node *ptr = NULL;
+    for (int layer = max_layer + 1; layer <= new_layer; layer++) {
+        Node *new_head = new Node(HEAD, "NONE", head.back(), NULL);
+        ptr = new_head->next = new Node(key, val, ptr, NULL);
+        head.push_back(new_head);
+    }
+}
+
+void MemTable::deleteLayerNodes(Node* head) {
+    Node *ptr = head->next;
+    Node *now_p;
+    while (ptr) {
+        now_p = ptr;
+        ptr = ptr->next;
+        delete now_p;
+    }
+}
+
+void MemTable::deleteAllNodes() {
+    for (auto it = head.rbegin(); it != head.rend(); ++it) {
+        deleteLayerNodes(*it);
+    }
+}

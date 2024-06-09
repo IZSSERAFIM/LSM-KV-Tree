@@ -67,6 +67,13 @@ private:
     void writeBuffer(int fd, char *buf, size_t vlog_len); // 修改参数类型为 char*
     uint16_t generateChecksum(uint64_t key, const std::string &value);
 
+    void findAndUpdate(uint64_t key, const std::string &val, Node *former[]);
+    void insertNewNodes(uint64_t key, const std::string &val, Node *former[], int new_layer);
+    void updateHeadNodes(uint64_t key, const std::string &val, int new_layer);
+
+    void deleteLayerNodes(Node* head);
+    void deleteAllNodes();
+
 public:
     //构造函数
     explicit MemTable(double p, uint64_t bloomSize);
