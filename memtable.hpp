@@ -1,5 +1,4 @@
-#ifndef MEMTABLE_H
-#define MEMTABLE_H
+#pragma once
 
 #include <cstdint>
 #include <cassert>
@@ -11,9 +10,7 @@
 #include <iostream>
 #include "sstable.hpp"
 #include "utils.h"
-
-#define VLOGPADDING 15
-#define MAGIC 0xff
+#include "config.h"
 
 template<typename key_type, typename value_type>
 class MemTable {
@@ -93,7 +90,7 @@ MemTable<key_type, value_type>::MemTable(double p, uint64_t bloomSize) {
     num_kv = 0;
     rand_double = std::uniform_real_distribution<double>(0, 1);
     //初始化头节点
-    MemTable::Node *new_head = new MemTable::Node(-0x7ffffff, std::string("NONE"), NULL, NULL);
+    MemTable::Node *new_head = new MemTable::Node(HEAD, std::string("NONE"), NULL, NULL);
     //添加头节点到头节点向量
     head.push_back(new_head);
     //初始化随机数生成器
@@ -150,7 +147,7 @@ void MemTable<key_type, value_type>::put(key_type key, const value_type &val) {
     }
     //如果新节点的层数超过当前最大层数，则增加层数，并创建新的头节点
     for (int layer = max_layer + 1; layer <= new_layer; layer++) {
-        MemTable::Node *new_head = new MemTable::Node(-0x7ffffff, std::string("NONE"), head.back(), NULL);
+        MemTable::Node *new_head = new MemTable::Node(HEAD, std::string("NONE"), head.back(), NULL);
         ptr = new_head->next = new MemTable::Node(key, val, ptr, NULL);
         head.push_back(new_head);
     }
@@ -217,8 +214,7 @@ std::vector <std::pair<key_type, value_type>> MemTable<key_type, value_type>::sc
 
 template<typename key_type, typename value_type>
 int MemTable<key_type, value_type>::size() {
-    //8+8+8+8 = 32(header) 8+8+4 = 20(kov)
-    return 32 + bloomSize + num_kv * 20;
+    return HEADERSIZE + bloomSize + num_kv * KOVSIZE;
 }
 
 template<typename key_type, typename value_type>
@@ -245,7 +241,7 @@ MemTable<key_type, value_type>::convertSSTable(int id, uint64_t stamp, const std
     //获取vlog文件的末尾偏移量
     off_t offset = (off_t) utils::get_end_offset(vlog);
     key_type max_k = 0;
-    key_type min_k = 0x7fffffff;
+    key_type min_k = MINKEY;
     std::vector <key_type> keys;
     std::vector <uint64_t> offsets;
     std::vector <uint64_t> valueLens;
@@ -304,5 +300,3 @@ void MemTable<key_type, value_type>::write_vlog(Node *p, off_t &offset, int fd) 
     //新偏移量 offset，增加写入的长度 vlog_len
     offset += vlog_len;
 }
-
-#endif //MEMTABLE_H

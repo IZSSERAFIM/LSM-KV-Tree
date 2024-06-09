@@ -3,11 +3,8 @@
 #include "kvstore_api.h"
 #include "memtable.hpp"
 #include "sstable.hpp"
+#include "config.h"
 
-//SSTable 的大小不6kB
-#define SSTABLESIZE (1 << 14)
-using key_type = uint64_t;
-using value_type = std::string;
 
 class KVStore : public KVStoreAPI {
     // You can add your implementation here
@@ -16,9 +13,9 @@ private:
     uint64_t head;//头部
     uint64_t tail;//尾部
     uint64_t bloomSize;//布隆过滤器大小
-    int test_mode;
+    int test_type;
     MemTable<key_type, value_type> *memTable;
-    std::vector<std::vector<SSTable<key_type, value_type>*>> layers;
+    std::vector<std::vector<SSTable<key_type, value_type>*>> layers;//存储每一层的 SSTable
     std::string dir_path;
     std::string vlog_path;
 

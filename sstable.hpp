@@ -8,14 +8,14 @@
 #include <fcntl.h>
 #include "bloomfilter.hpp"
 #include "utils.h"
+#include "config.h"
 
-#define VLOGPADDING 15
 
 struct head_type {
     uint64_t stamp;//时间戳
     uint64_t num_kv;//键值对数量
-    uint64_t max_k;//最大键
-    uint64_t min_k;//最小键
+    uint64_t max_key;//最大键
+    uint64_t min_key;//最小键
 };
 
 template<typename key_type, typename value_type>
@@ -39,7 +39,7 @@ public:
     SSTable(head_type head, int level, int id, bloomFilter *bloomFilter, std::vector <key_type> keys, std::vector <uint64_t> offsets, std::vector <uint64_t> valueLens, std::string dir_path, std::string vlog_path);
 
     //从磁盘读取 SSTable 的数据并初始化成员变量
-    SSTable(int level, int id, std::string sst, std::string dir_path, std::string vlog_path, uint64_t bloomSize);
+    SSTable(int level, int id, std::string sstFilename, std::string dir_path, std::string vlog_path, uint64_t bloomSize);
 
     //析构函数
     ~SSTable();
@@ -68,9 +68,9 @@ public:
 
     uint64_t getStamp() const;
 
-    key_type get_maxk() const;
+    key_type get_maxkey() const;
 
-    key_type get_mink() const;
+    key_type get_minkey() const;
 
     std::vector <key_type> get_keys() const;
 
@@ -108,11 +108,11 @@ SSTable<key_type, value_type>::SSTable(int level, int id, std::string sstFilenam
     //读取文件的前 32 字节，存入 `buf` 中。
     utils::read_file(fd, -1, 32, buf);
     //将 `buf` 中的内容分别赋值给 `head` 的成员变量。
-    //`stamp` 为时间戳，`num_kv` 为键值对数量，`min_k` 为最小键，`max_k` 为最大键。
+    //`stamp` 为时间戳，`num_kv` 为键值对数量，`min_key` 为最小键，`max_key` 为最大键。
     head.stamp = *(uint64_t *) buf;
     head.num_kv = *(uint64_t * )(buf + 8);
-    head.min_k = *(uint64_t * )(buf + 16);
-    head.max_k = *(uint64_t * )(buf + 24);
+    head.min_key = *(uint64_t * )(buf + 16);
+    head.max_key = *(uint64_t * )(buf + 24);
     //创建一个布隆过滤器 `bloomfilter`，大小为 `bloomSize`，哈希函数个数为 3。
     bloomfilter = new bloomFilter(bloomSize, 3);
     //使用 utils::read_file 函数读取布隆过滤器的数据到 bloomfilter 的数组中
@@ -174,7 +174,7 @@ value_type SSTable<key_type, value_type>::get_fromdisk(key_type key) const {
     std::string sstFilename = dir_path + "/" + std::to_string(level) + "-" + std::to_string(id) + ".sst";
     char buf[64] = {0};
     int fd = open(sstFilename.c_str(), O_RDWR, 0644);
-    utils::read_file(fd, 0, 32, buf);
+    utils::read_file(fd, 0, HEADERSIZE, buf);
     //从缓冲区中解析出键值对的数量 num_kv ,前面的时间戳有8位
     uint64_t num_kv = *(uint64_t * )(buf + 8);
     //使用 lseek 函数将文件指针移动到键值对数据区域的起始位置。这个位置是布隆过滤器大小加上header的大小（32 字节）
@@ -290,8 +290,8 @@ void SSTable<key_type, value_type>::write_sst() const {
     char buf[64] = {0};
     *(uint64_t *) buf = head.stamp;
     *(uint64_t * )(buf + 8) = head.num_kv;
-    *(uint64_t * )(buf + 16) = head.min_k;
-    *(uint64_t * )(buf + 24) = head.max_k;
+    *(uint64_t * )(buf + 16) = head.min_key;
+    *(uint64_t * )(buf + 24) = head.max_key;
     utils::write_file(sstFilename, -1, 32, buf);
     utils::write_file(sstFilename, -1, bloomfilter->getM(), bloomfilter->getSet());
     for (int i = 0; i < keys.size(); i++) {
@@ -313,13 +313,13 @@ uint64_t SSTable<key_type, value_type>::getStamp() const {
 }
 
 template<typename key_type, typename value_type>
-key_type SSTable<key_type, value_type>::get_maxk() const {
-    return head.max_k;
+key_type SSTable<key_type, value_type>::get_maxkey() const {
+    return head.max_key;
 }
 
 template<typename key_type, typename value_type>
-key_type SSTable<key_type, value_type>::get_mink() const {
-    return head.min_k;
+key_type SSTable<key_type, value_type>::get_minkey() const {
+    return head.min_key;
 }
 
 template<typename key_type, typename value_type>
