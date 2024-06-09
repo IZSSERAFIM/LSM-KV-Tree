@@ -32,6 +32,16 @@ private:
     void removeDeletedPairs(std::list<std::pair<uint64_t, std::string>>& list, std::vector<std::vector<std::pair<uint64_t, std::string>>>& scanRes, std::vector<int>& it, std::priority_queue<kv>& kvs);
     uint64_t readVlogAndWriteToMemTable(uint64_t chunk_size, int fd, char* buf, uint64_t& read_len);
     void convertMemTableToSSTable();
+    int determineCompactSize(int level);
+    void updateMinMaxKeys(int compact_size, uint64_t& min_key, uint64_t& max_key, int level);
+    void prepareNextLayer(int level);
+    void collectOverlappingSSTables(int level, uint64_t min_key, uint64_t max_key, std::vector<int>& index, std::vector<int>& it);
+    void addKVToPriorityQueue(int level, int compact_size, std::vector<int>& it, std::priority_queue<kv_info>& kvs, std::vector<int>& index);
+    std::vector<kv_info> collectKVList(std::vector<int>& it, std::priority_queue<kv_info>& kvs, int level, std::vector<int>& index, int compact_size);
+    void deleteOldSSTables(int level, std::vector<int>& index, int compact_size);
+    void updateSSTableIndices(int level);
+    void createNewSSTables(int level, std::vector<kv_info>& kv_list);
+
     void compaction(int level);
 
 public:
