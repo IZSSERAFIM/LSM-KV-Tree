@@ -143,13 +143,7 @@ void KVStore::put(uint64_t key, const std::string &s)
     memTable -> put(key, s);
 }
 
-/**
- * Returns the (string) value of the given key.
- * An empty string indicates not found.
- */
-std::string KVStore::get(uint64_t key)
-{
-    //从内存中的跳表 memTable 获取值
+std::string KVStore::getValueFromMemTable(uint64_t key) {
     std::string val = memTable -> get(key);
     if (val == "~DELETED~") {
         return "";
@@ -157,18 +151,18 @@ std::string KVStore::get(uint64_t key)
     else if(val != "") {
         return val;
     }
-    //从 SSTable 获取值
+    return "";
+}
+
+std::string KVStore::getValueFromSSTable(uint64_t key) {
+    std::string val = "";
     for(int i = 0; i < layers.size(); i ++) {
-        //从后向前遍历每层 SSTable
         for (int j = layers[i].size() - 1; j >= 0; j--) {
-            //如果测试模式为 1 或 2，或者布隆过滤器判断键可能存在于 SSTable 中，则继续获取值
             if (test_type == 1 || test_type == 2 || layers[i][j]->query(key)) {
-                //如果测试模式为2, 从磁盘中获取值
                 if (test_type == 2) {
                     val = layers[i][j]->get_fromdisk(key);
                 }
                 else {
-                    //从 SSTable 中获取值
                     val = layers[i][j]->get(key);
                 }
                 if (val == "~DELETED~") {
@@ -181,6 +175,20 @@ std::string KVStore::get(uint64_t key)
         }
     }
     return "";
+}
+
+/**
+ * Returns the (string) value of the given key.
+ * An empty string indicates not found.
+ */
+std::string KVStore::get(uint64_t key)
+{
+    std::string val = getValueFromMemTable(key);
+    if(val != "") {
+        return val;
+    }
+    val = getValueFromSSTable(key);
+    return val;
 }
 
 /**

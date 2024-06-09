@@ -23,6 +23,8 @@ private:
     void write_sst(std::priority_queue<sst_info>& sstables);
     void checkAndConvertMemTable();
     void doCompaction();
+    std::string getValueFromMemTable(uint64_t key);
+    std::string getValueFromSSTable(uint64_t key);
     void compaction(int level);
 
 public:
