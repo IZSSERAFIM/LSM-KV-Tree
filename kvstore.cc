@@ -129,20 +129,9 @@ void KVStore::doCompaction() {
  * No return values for simplicity.
  */
 void KVStore::put(uint64_t key, const std::string &s) {
-    //检查 memTable 的大小是否超过 SSTABLESIZE
-    if (memTable->size() >= SSTABLESIZE) {
-        //将 memTable 转换为 SSTable 并添加到第 0 层
-        layers[0].push_back(memTable->convertSSTable(layers[0].size(), stamp++, dir_path, vlog_path));
-        delete memTable;
-        //进行compaction, Level n层的文件数量为2^(𝑛+1)
-        for (int i = 0; i < layers.size() && layers[i].size() > (1 << i + 2); i++) {
-            compaction(i);
-        }
-        //创建一个新的 memTable
-        memTable = new MemTable(0.5, bloomSize);
-    }
-    //将键值对插入 memTable
-    memTable->put(key, s);
+    checkAndConvertMemTable();
+    doCompaction();
+    memTable -> put(key, s);
 }
 
 std::string KVStore::getValueFromMemTable(uint64_t key) {
@@ -240,30 +229,11 @@ void KVStore::deleteAllFilesInDir() {
  * including memtable and all sstables files.
  */
 void KVStore::reset() {
-    //删除所有 SSTable 文件
-    for (int i = 0; i < layers.size(); i++) {
-        for (int j = layers[i].size() - 1; j >= 0; j--) {
-            //删除 SSTable 文件
-            layers[i][j]->delete_disk();
-            //释放 SSTable 对象
-            delete layers[i][j];
-            //从层中移除 SSTable
-            layers[i].pop_back();
-        }
-    }
-    //删除 memTable
+    deleteAllSSTables();
     delete memTable;
-    //删除 vlog 文件
     utils::rmfile(vlog_path);
-    //删除存储目录中的所有文件
-    std::vector <std::string> files;
-    //获取存储目录中的所有文件名，并存储到 files 向量中
-    utils::scanDir(dir_path, files);
-    for (int i = 0; i < files.size(); i++) {
-        utils::rmfile(files[i]);
-    }
-    //重新初始化 memTable
-    memTable = new MemTable(0.5, bloomSize);
+    deleteAllFilesInDir();
+    memTable = new MemTable (0.5, bloomSize);
 }
 
 /**
