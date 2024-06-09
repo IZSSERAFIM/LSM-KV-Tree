@@ -36,6 +36,64 @@ bool operator < (sst_info a, sst_info b)
     else return a.level > b.level;
 }
 
+void KVStore::process_vlog() {
+    if(utils::fileExists(vlog_path)) {
+        tail = utils::seek_data_block(vlog_path);
+        head = utils::get_end_offset(vlog_path);
+        int fd = open(vlog_path.c_str(), O_RDWR, 0644);
+        lseek(fd, tail, SEEK_SET);
+        char buf[BUFFER_SIZE];
+        while(tail < head) {
+            read(fd, buf, 1);
+            while(buf[0] != (char)MAGIC) {
+                tail ++;
+                read(fd, buf, 1);
+            }
+            read(fd, buf, VLOGPADDING - 1);
+            uint16_t checkSum = *(uint16_t*)buf;
+            uint64_t key = *(uint64_t*)(buf + 2);
+            uint32_t vlen = *(uint32_t*)(buf + 10);
+            read(fd, buf, vlen);
+            std::string value(buf);
+            uint16_t check_sum = utils::generate_checksum(key, vlen, value);
+            if(check_sum == checkSum) {
+                break;
+            }
+            tail = tail + VLOGPADDING + vlen;
+        }
+        close(fd);
+    }
+}
+
+void KVStore::process_sst(std::vector<std::string>& files, std::priority_queue<sst_info>& sstables) {
+    for(int i = 0; i < files.size(); i ++){
+        if(files[i].find('.') != -1) {
+            std::string file = files[i].substr(0, files[i].find('.'));
+            int level = atoi(file.substr(0, file.find('-')).c_str());
+            int id = atoi(file.substr(file.find('-') + 1, file.length()).c_str());
+            sstables.push(sst_info{level, id, files[i]});
+        }
+    }
+}
+
+void KVStore::write_sst(std::priority_queue<sst_info>& sstables) {
+    layers.push_back(std::vector<SSTable *>());
+    while(!sstables.empty()) {
+        sst_info sst = sstables.top();
+        sstables.pop();
+        while(layers.size() <= sst.level) {
+            layers.push_back(std::vector<SSTable  *>());
+        }
+        layers[sst.level].push_back(new SSTable (sst.level, sst.id, sst.file, dir_path, vlog_path, bloomSize));
+        stamp = std::max(layers[sst.level].back() -> getStamp() + 1, stamp);
+    }
+}
+
+/**
+ * Demo consturctor used for test
+ * !! cannot persistence !!
+ * @param bloomSize bloomFilter size
+*/
 KVStore::KVStore(const std::string &dir, const std::string &vlog) : KVStoreAPI(dir, vlog)
 {
     this->memTable = new MemTable (0.5, BLOOMSIZE);
@@ -46,73 +104,12 @@ KVStore::KVStore(const std::string &dir, const std::string &vlog) : KVStoreAPI(d
     this->tail = 0;
     this->test_type = 0;
     this->bloomSize = BLOOMSIZE;
-    //定义一个优先队列 sstables，用于存储 sst_info 对象
     std::priority_queue<sst_info> sstables;
-    //定义一个字符串向量 files，用于存储目录中的文件名
     std::vector <std::string> files;
-    //扫描目录 dir_path，将文件名存储到 files 向量中
     utils::scanDir(dir_path, files);
-    //设置vlog 文件的tail位置
-    if(utils::fileExists(vlog_path)) {
-        //获取vlog文件的尾部和头部偏移量
-        tail = utils::seek_data_block(vlog_path);
-        head = utils::get_end_offset(vlog_path);
-        //打开vlog文件
-        int fd = open(vlog_path.c_str(), O_RDWR, 0644);
-        //将文件指针移动到尾部偏移量
-        lseek(fd, tail, SEEK_SET);
-        char buf[BUFFER_SIZE];
-        while(tail < head) {
-            //读取一个字节，检查是否为 MAGIC 标志
-            read(fd, buf, 1);
-            while(buf[0] != (char)MAGIC) {
-                tail ++;
-                read(fd, buf, 1);
-            }
-            //读取日志前缀，获取校验和、键和值的长度
-            read(fd, buf, VLOGPADDING - 1);
-            uint16_t checkSum = *(uint16_t*)buf;
-            uint64_t key = *(uint64_t*)(buf + 2);
-            uint32_t vlen = *(uint32_t*)(buf + 10);
-            //读取值并计算校验和，验证数据完整性
-            read(fd, buf, vlen);
-            std::string value(buf);
-            uint16_t check_sum = utils::generate_checksum(key, vlen, value);
-            //如果校验和正确，说明找到了有效的第一个vlog entry
-            if(check_sum == checkSum) {
-                break;
-            }
-            //更新尾部偏移量 tail
-            tail = tail + VLOGPADDING + vlen;
-        }
-        close(fd);
-    }
-    //处理目录中的sst文件
-    for(int i = 0; i < files.size(); i ++){
-        //检查文件名是否包含 .
-        if(files[i].find('.') != -1) {
-            //去掉文件扩展名
-            std::string file = files[i].substr(0, files[i].find('.'));
-            //获取层级和 id
-            int level = atoi(file.substr(0, file.find('-')).c_str());
-            int id = atoi(file.substr(file.find('-') + 1, file.length()).c_str());
-            //将文件信息压入优先队列
-            sstables.push(sst_info{level, id, files[i]});
-        }
-    }
-    //写入一层sst
-    layers.push_back(std::vector<SSTable *>());
-    while(!sstables.empty()) {
-        sst_info sst = sstables.top();
-        sstables.pop();
-        while(layers.size() <= sst.level) {
-            layers.push_back(std::vector<SSTable  *>());
-        }
-        //将 SSTable 添加到对应层
-        layers[sst.level].push_back(new SSTable (sst.level, sst.id, sst.file, dir, vlog, bloomSize));
-        //更新时间戳
-        stamp = std::max(layers[sst.level].back() -> getStamp() + 1, stamp);
-    }
+    process_vlog();
+    process_sst(files, sstables);
+    write_sst(sstables);
 }
 
 KVStore::~KVStore()

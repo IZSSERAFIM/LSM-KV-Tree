@@ -13,12 +13,14 @@ private:
     uint64_t head;//头部
     uint64_t tail;//尾部
     uint64_t bloomSize;//布隆过滤器大小
+    std::string dir_path;
+    std::string vlog_path;
     int test_type;
     MemTable  *memTable;
     std::vector<std::vector<SSTable *>> layers;//存储每一层的 SSTable
-    std::string dir_path;
-    std::string vlog_path;
-
+    void process_vlog();
+    void process_sst(std::vector<std::string>& files, std::priority_queue<sst_info>& sstables);
+    void write_sst(std::priority_queue<sst_info>& sstables);
     void compaction(int level);
 
 public:
